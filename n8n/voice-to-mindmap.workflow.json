@@ -1,0 +1,2006 @@
+{
+  "name": "Voice to Mindmap",
+  "nodes": [
+    {
+      "id": "4d18d2b3-f5d7-9dbd-ffbb-ed9a0e57609b",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -620,
+        300
+      ],
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram — Notulensi Bot"
+        }
+      },
+      "webhookId": "a7f1c0de-4b21-4a90-9c1f-voice2mindmap"
+    },
+    {
+      "id": "fa535ffb-25e1-fd20-3416-52f9be21e06e",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -400,
+        300
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "62405bbd-f595-9138-f156-3a7c6a2f5c70",
+              "name": "allowed_chat_ids",
+              "value": "000000000",
+              "type": "string"
+            },
+            {
+              "id": "4b5634d5-0f44-0bb1-7f36-1ce6cf9b517b",
+              "name": "groq_url",
+              "value": "https://api.groq.com/openai/v1/audio/transcriptions",
+              "type": "string"
+            },
+            {
+              "id": "538fe3ba-c2cb-c9d9-d98d-ef6b8e14b702",
+              "name": "groq_model",
+              "value": "whisper-large-v3",
+              "type": "string"
+            },
+            {
+              "id": "6bc99cf9-4dc9-8b4d-f011-dde1cbe960aa",
+              "name": "openai_url",
+              "value": "https://api.openai.com/v1/audio/transcriptions",
+              "type": "string"
+            },
+            {
+              "id": "cf77bd09-fdc8-b0de-8f74-d0d0d9b62b34",
+              "name": "openai_model",
+              "value": "whisper-1",
+              "type": "string"
+            },
+            {
+              "id": "94049cc1-17e4-251a-5a06-7b38d31b81ab",
+              "name": "transcribe_language",
+              "value": "id",
+              "type": "string"
+            },
+            {
+              "id": "a2e9ea4c-bf35-b861-18d9-0051fa48df18",
+              "name": "llm_base_url",
+              "value": "https://openrouter.ai/api/v1",
+              "type": "string"
+            },
+            {
+              "id": "cc2a3dd9-7fa1-10d6-5e1e-b3e3a4ae299a",
+              "name": "llm_model",
+              "value": "google/gemini-3.1-flash-lite",
+              "type": "string"
+            },
+            {
+              "id": "9297c493-4795-59df-be08-3da78d7498de",
+              "name": "llm_json_mode",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "2ab55290-e74e-0d7c-839c-7d0ea9ab040f",
+              "name": "llm_temperature_correct",
+              "value": 0.1,
+              "type": "number"
+            },
+            {
+              "id": "4c1387ca-bc39-3e69-a516-db504531e82c",
+              "name": "llm_temperature_outline",
+              "value": 0.3,
+              "type": "number"
+            },
+            {
+              "id": "0f3a0335-8032-e710-3c35-cf6f6023b2f4",
+              "name": "render_base_url",
+              "value": "https://notulensi-render.contoh.com",
+              "type": "string"
+            },
+            {
+              "id": "7c6ceb47-39b3-ba03-85f0-6e022a769e90",
+              "name": "mindmap_width",
+              "value": 1600,
+              "type": "number"
+            },
+            {
+              "id": "d2f48dc4-e6b9-87e0-6b65-824041e3bcbd",
+              "name": "mindmap_theme",
+              "value": "light",
+              "type": "string"
+            },
+            {
+              "id": "4059ef72-02fd-82ca-2652-71ddede296a3",
+              "name": "max_transcript_inline",
+              "value": 3000,
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c54b5b8b-92f0-0ac0-5505-bbea39d038db",
+      "name": "Guard: Chat Diizinkan",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -180,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "354b672b-4f15-22d2-10c1-8b64a397f82c",
+              "leftValue": "={{ $('Config').first().json.allowed_chat_ids.split(',').map(v => v.trim()).filter(v => v).includes(String($json.message ? $json.message.chat.id : '')) }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "30501f4e-f8b3-6126-3271-0aafec3da38c",
+      "name": "Abaikan",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        40,
+        120
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "8f5190af-0934-316f-8491-4a59c847317f",
+      "name": "Extract Audio",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        40,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Ambil metadata audio dari update Telegram (voice note, file audio, video note,\n// atau document ber-mime audio/video) dan normalkan jadi satu bentuk.\nconst update = $input.first().json;\nconst message = update.message ?? update.channel_post ?? update;\n\nconst candidates = [\n  ['voice', message.voice],\n  ['audio', message.audio],\n  ['video_note', message.video_note],\n];\n\nlet kind = null;\nlet media = null;\nfor (const [name, value] of candidates) {\n  if (value && value.file_id) {\n    kind = name;\n    media = value;\n    break;\n  }\n}\n\nif (!media && message.document?.file_id) {\n  const mime = String(message.document.mime_type ?? '');\n  if (/^(audio|video)\\//.test(mime)) {\n    kind = 'document';\n    media = message.document;\n  }\n}\n\nconst chatId = String(message.chat?.id ?? '');\nconst sentAt = message.date ? new Date(message.date * 1000).toISOString() : new Date().toISOString();\n\nreturn [\n  {\n    json: {\n      has_audio: Boolean(media),\n      kind,\n      chat_id: chatId,\n      message_id: message.message_id ?? null,\n      from: message.from?.first_name ?? '',\n      caption: String(message.caption ?? '').trim(),\n      sent_at: sentAt,\n      file_id: media?.file_id ?? '',\n      file_name: media?.file_name ?? '',\n      mime_type: media?.mime_type ?? '',\n      file_size: Number(media?.file_size ?? 0),\n      duration_sec: Number(media?.duration ?? 0),\n    },\n  },\n];\n"
+      }
+    },
+    {
+      "id": "185e240a-eff0-2aed-3b04-3b4afccc2768",
+      "name": "Guard: Ada Audio",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        260,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "1734be68-92b2-6ec2-32bc-b23324f00dcb",
+              "leftValue": "={{ $json.has_audio }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "318307b8-f458-28c8-f77e-d641e472f59d",
+      "name": "Download Audio",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        480,
+        300
+      ],
+      "parameters": {
+        "resource": "file",
+        "operation": "get",
+        "fileId": "={{ $json.file_id }}",
+        "download": true
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram — Notulensi Bot"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000
+    },
+    {
+      "id": "0b852973-c3c8-6b8d-4941-67875669f3e6",
+      "name": "Prepare Audio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        700,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.render_base_url }}/audio/prepare",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 900000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_RENDER_CREDENTIAL_ID",
+          "name": "Render Service"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "7bac4977-1c27-058e-0bd2-b66b7f576512",
+      "name": "Split Parts",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        920,
+        300
+      ],
+      "parameters": {
+        "fieldToSplitOut": "parts",
+        "options": {}
+      }
+    },
+    {
+      "id": "e447f93d-6247-6dc3-1d3f-32cacfdade08",
+      "name": "Download Part",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1140,
+        300
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 300000,
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_RENDER_CREDENTIAL_ID",
+          "name": "Render Service"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000
+    },
+    {
+      "id": "f263a8e5-3868-ca90-e374-9c926407657e",
+      "name": "Transcribe (Groq)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1360,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.groq_url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            },
+            {
+              "parameterType": "formData",
+              "name": "model",
+              "value": "={{ $('Config').first().json.groq_model }}"
+            },
+            {
+              "parameterType": "formData",
+              "name": "language",
+              "value": "={{ $('Config').first().json.transcribe_language }}"
+            },
+            {
+              "parameterType": "formData",
+              "name": "response_format",
+              "value": "json"
+            },
+            {
+              "parameterType": "formData",
+              "name": "temperature",
+              "value": "0"
+            },
+            {
+              "parameterType": "formData",
+              "name": "prompt",
+              "value": "Transkrip rapat bisnis Bahasa Indonesia. Ejaan yang benar: Zaneva, Elyasr, Be.Syari, Oberbe, Muslimah Swimwear, Yaumiah, ROAS, ROI, HPP, omzet, margin, gross profit, net profit, cashflow, CPA, CPM, CTR, AOV, SKU, COD, closing, reseller, affiliate, endorse, marketplace, funnel, landing page, retargeting, budget harian, content plan, stock opname, pre-order, restock, supplier, invoice, purchase order, cash on delivery."
+            }
+          ]
+        },
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_GROQ_CREDENTIAL_ID",
+          "name": "Groq API"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "af76fe8a-35d1-32e8-3573-d8bd91732bca",
+      "name": "Download Part (Fallback)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1360,
+        520
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Split Parts').item.json.url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 300000,
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_RENDER_CREDENTIAL_ID",
+          "name": "Render Service"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000
+    },
+    {
+      "id": "bef660f2-eea1-b7c8-b783-882632a7f423",
+      "name": "Transcribe (OpenAI Fallback)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1580,
+        520
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.openai_url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            },
+            {
+              "parameterType": "formData",
+              "name": "model",
+              "value": "={{ $('Config').first().json.openai_model }}"
+            },
+            {
+              "parameterType": "formData",
+              "name": "language",
+              "value": "={{ $('Config').first().json.transcribe_language }}"
+            },
+            {
+              "parameterType": "formData",
+              "name": "response_format",
+              "value": "json"
+            },
+            {
+              "parameterType": "formData",
+              "name": "temperature",
+              "value": "0"
+            },
+            {
+              "parameterType": "formData",
+              "name": "prompt",
+              "value": "Transkrip rapat bisnis Bahasa Indonesia. Ejaan yang benar: Zaneva, Elyasr, Be.Syari, Oberbe, Muslimah Swimwear, Yaumiah, ROAS, ROI, HPP, omzet, margin, gross profit, net profit, cashflow, CPA, CPM, CTR, AOV, SKU, COD, closing, reseller, affiliate, endorse, marketplace, funnel, landing page, retargeting, budget harian, content plan, stock opname, pre-order, restock, supplier, invoice, purchase order, cash on delivery."
+            }
+          ]
+        },
+        "options": {
+          "timeout": 600000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI Whisper Fallback"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "98f4cfef-c562-2528-c918-41780a4bb9d8",
+      "name": "Merge Transcript Parts",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        1800,
+        380
+      ],
+      "parameters": {
+        "mode": "append",
+        "numberInputs": 2
+      }
+    },
+    {
+      "id": "b9fda951-794a-ee2d-5d18-205dd8443627",
+      "name": "Merge Transcript",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2020,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Gabungkan hasil transkripsi semua part audio kembali jadi satu teks.\n// Node ini menerima item dari jalur Groq maupun jalur fallback OpenAI, jadi\n// urutannya dipulihkan lewat index part-nya, bukan lewat urutan item.\nconst items = $input.all();\nconst rows = [];\n\nfor (let i = 0; i < items.length; i++) {\n  const json = items[i].json ?? {};\n\n  let index = i;\n  try {\n    const matched = $('Split Parts').itemMatching(i);\n    const value = Number(matched?.json?.index);\n    if (Number.isFinite(value)) index = value;\n  } catch (error) {\n    // Paired-item tidak bisa ditelusuri (mis. provider mengubah bentuk item) —\n    // pakai urutan kedatangan sebagai perkiraan terbaik.\n    index = i;\n  }\n\n  const text = typeof json.text === 'string' ? json.text : (json.transcript ?? '');\n  rows.push({ index, text: String(text).trim() });\n}\n\nrows.sort((a, b) => a.index - b.index);\n\nconst transcriptRaw = rows\n  .map((row) => row.text)\n  .filter(Boolean)\n  .join('\\n\\n')\n  .trim();\n\nconst meta = $('Extract Audio').first().json;\n\nreturn [\n  {\n    json: {\n      chat_id: meta.chat_id,\n      message_id: meta.message_id,\n      sent_at: meta.sent_at,\n      caption: meta.caption,\n      duration_sec: meta.duration_sec,\n      part_count: rows.length,\n      transcript_raw: transcriptRaw,\n      has_transcript: transcriptRaw.length > 0,\n    },\n  },\n];\n"
+      }
+    },
+    {
+      "id": "2ed1c53d-acca-5ee8-b66f-c3ab2dc19349",
+      "name": "Guard: Transkrip Ada",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2240,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "bec52af7-199f-f91e-3008-7300c8c982ce",
+              "leftValue": "={{ $json.has_transcript }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "9dd28198-9ffb-83be-8ea4-440d79e53b59",
+      "name": "Build Correction Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2460,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Susun body request LLM untuk koreksi istilah.\n// Transkrip adalah input bebas, jadi body-nya dirakit sebagai objek lalu\n// di-JSON.stringify() di sini dan dikirim sebagai Raw body oleh HTTP Request node.\nconst SYSTEM_PROMPT = \"Kamu adalah editor transkrip Bahasa Indonesia untuk rekaman rapat/brainstorm bisnis.\\n\\nTugasmu HANYA memperbaiki hasil speech-to-text, bukan menulis ulang.\\n\\nATURAN WAJIB:\\n1. Perbaiki typo, salah dengar, dan ejaan istilah/brand memakai kamus di bawah.\\n2. Perbaiki tanda baca, kapitalisasi, dan pemenggalan kalimat agar mudah dibaca.\\n3. Hapus filler yang tidak bermakna (eh, emm, anu, gitu ya) bila mengganggu, tapi JANGAN memadatkan isi.\\n4. JANGAN mengubah makna, JANGAN menambah informasi baru, JANGAN menyimpulkan, JANGAN menerjemahkan.\\n5. Kalau sebuah kata benar-benar tidak jelas, biarkan apa adanya — jangan menebak fakta.\\n6. Pertahankan angka, nominal, tanggal, dan nama orang persis seperti aslinya.\\n7. Pisahkan menjadi paragraf saat topik berganti.\\n\\nKAMUS EJAAN (ini ejaan yang benar — pakai persis seperti ini):\\nBrand & nama produk: Zaneva, Elyasr, Be.Syari, Oberbe, Muslimah Swimwear, Yaumiah\\nIstilah bisnis: ROAS, ROI, HPP, omzet, margin, gross profit, net profit, cashflow, CPA, CPM, CTR, AOV, SKU, COD, closing, reseller, affiliate, endorse, marketplace, funnel, landing page, retargeting, budget harian, content plan, stock opname, pre-order, restock, supplier, invoice, purchase order, cash on delivery\\n\\nFORMAT OUTPUT:\\nBalas HANYA dengan teks transkrip yang sudah diperbaiki. Tanpa pembuka, tanpa penutup, tanpa penjelasan, tanpa tanda kutip pembungkus, tanpa blok kode.\";\n\nconst config = $('Config').first().json;\nconst source = $input.first().json;\nconst transcript = String(source.transcript_raw ?? '').trim();\n\nconst body = {\n  model: config.llm_model,\n  temperature: Number(config.llm_temperature_correct ?? 0.1),\n  messages: [\n    { role: 'system', content: SYSTEM_PROMPT },\n    { role: 'user', content: transcript },\n  ],\n};\n\nreturn [\n  {\n    json: {\n      ...source,\n      llm_url: `${String(config.llm_base_url).replace(/\\/+$/, '')}/chat/completions`,\n      body: JSON.stringify(body),\n    },\n  },\n];\n"
+      }
+    },
+    {
+      "id": "a579b7eb-35d6-ff4c-b16f-e4d56359c598",
+      "name": "LLM: Correct Terms",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2680,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.llm_url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.body }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_LLM_CREDENTIAL_ID",
+          "name": "LLM Provider"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "4b038a52-bdd3-f9d6-4b7e-35a0210186f3",
+      "name": "Parse Correction",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2900,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Ambil teks balasan LLM dari bentuk respons OpenAI-compatible.\nconst response = $input.first().json;\nconst previous = $('Build Correction Request').first().json;\n\nconst choice = response?.choices?.[0];\nconst raw = choice?.message?.content ?? choice?.text ?? '';\n\nconst corrected = (Array.isArray(raw) ? raw.map((part) => part?.text ?? '').join('') : String(raw))\n  // Sebagian model membungkus jawaban dalam blok kode meski sudah dilarang.\n  .replace(/^\\s*```[a-z]*\\s*\\n?/i, '')\n  .replace(/\\n?```\\s*$/i, '')\n  .trim();\n\nconst fallbackUsed = corrected.length === 0;\n\nreturn [\n  {\n    json: {\n      chat_id: previous.chat_id,\n      message_id: previous.message_id,\n      sent_at: previous.sent_at,\n      caption: previous.caption,\n      duration_sec: previous.duration_sec,\n      part_count: previous.part_count,\n      transcript_raw: previous.transcript_raw,\n      // Kalau LLM balas kosong, lebih baik pakai transkrip mentah daripada gagal.\n      transcript_corrected: fallbackUsed ? previous.transcript_raw : corrected,\n      correction_applied: !fallbackUsed,\n    },\n  },\n];\n"
+      }
+    },
+    {
+      "id": "2d46702d-3231-a24a-1dbd-19977718ce59",
+      "name": "Build Outline Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3120,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Susun body request LLM untuk ringkasan + outline mind map.\n// Node yang sama dipakai untuk percobaan pertama dan percobaan ulang; saat\n// RETRY_MODE aktif, instruksi tambahan soal JSON valid ikut dikirim.\nconst SYSTEM_PROMPT = \"Kamu adalah notulis profesional. Dari transkrip rapat/brainstorm Bahasa Indonesia, hasilkan ringkasan dan outline mind map.\\n\\nATURAN ISI:\\n1. Semua output dalam Bahasa Indonesia.\\n2. Hanya gunakan informasi yang ada di transkrip. Dilarang mengarang, menebak, atau menambah rekomendasi yang tidak diucapkan.\\n3. `summary` = 3-6 kalimat padat berisi inti pembahasan dan keputusan. Bukan daftar, bukan bullet.\\n4. `title` = judul singkat maksimal 8 kata yang menggambarkan isi rekaman.\\n5. `outline` = struktur mind map:\\n   - Level 1: 1 node akar saja, isinya sama dengan `title`.\\n   - Level 2: 3-7 tema besar.\\n   - Level 3: detail/poin di bawah tiap tema, maksimal 6 per tema.\\n   - MAKSIMAL 3 level. Dilarang membuat level ke-4.\\n6. Teks tiap node maksimal 60 karakter, ringkas seperti judul, tanpa tanda baca di akhir.\\n7. Kalau ada action item / keputusan, jadikan salah satu tema level 2 tersendiri.\\n8. Jangan menaruh markdown (#, *, -) di dalam nilai `title`.\\n\\nFORMAT OUTPUT — balas HANYA dengan objek JSON valid, tanpa blok kode, tanpa teks lain:\\n{\\n  \\\"title\\\": \\\"string\\\",\\n  \\\"summary\\\": \\\"string\\\",\\n  \\\"outline\\\": [\\n    {\\n      \\\"title\\\": \\\"string\\\",\\n      \\\"children\\\": [\\n        { \\\"title\\\": \\\"string\\\", \\\"children\\\": [ { \\\"title\\\": \\\"string\\\" } ] }\\n      ]\\n    }\\n  ]\\n}\\n\\nKAMUS EJAAN (pakai persis seperti ini bila muncul):\\nBrand & nama produk: Zaneva, Elyasr, Be.Syari, Oberbe, Muslimah Swimwear, Yaumiah\\nIstilah bisnis: ROAS, ROI, HPP, omzet, margin, gross profit, net profit, cashflow, CPA, CPM, CTR, AOV, SKU, COD, closing, reseller, affiliate, endorse, marketplace, funnel, landing page, retargeting, budget harian, content plan, stock opname, pre-order, restock, supplier, invoice, purchase order, cash on delivery\";\nconst RETRY_MODE = false;\n\nconst config = $('Config').first().json;\nconst source = RETRY_MODE ? $('Parse Correction').first().json : $input.first().json;\nconst transcript = String(source.transcript_corrected ?? source.transcript_raw ?? '').trim();\n\nconst messages = [{ role: 'system', content: SYSTEM_PROMPT }];\n\nif (RETRY_MODE) {\n  messages.push({\n    role: 'system',\n    content:\n      'PERCOBAAN ULANG. Balasan sebelumnya bukan JSON valid. Balas HANYA satu objek JSON valid ' +\n      'sesuai skema di atas — tanpa blok kode, tanpa komentar, tanpa teks pembuka atau penutup. ' +\n      'Pastikan seluruh tanda kurung dan tanda kutip tertutup rapi.',\n  });\n}\n\nmessages.push({ role: 'user', content: transcript });\n\nconst body = {\n  model: config.llm_model,\n  temperature: RETRY_MODE ? 0 : Number(config.llm_temperature_outline ?? 0.3),\n  messages,\n};\n\n// Beberapa provider OpenAI-compatible belum mendukung response_format —\n// matikan lewat field `llm_json_mode` di node Config kalau provider menolak.\nif (config.llm_json_mode === true || config.llm_json_mode === 'true') {\n  body.response_format = { type: 'json_object' };\n}\n\nreturn [\n  {\n    json: {\n      ...source,\n      llm_url: `${String(config.llm_base_url).replace(/\\/+$/, '')}/chat/completions`,\n      body: JSON.stringify(body),\n    },\n  },\n];\n"
+      }
+    },
+    {
+      "id": "85310db3-1cbe-d3b4-311d-409f7c4cb198",
+      "name": "LLM: Generate Outline",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3340,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.llm_url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.body }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_LLM_CREDENTIAL_ID",
+          "name": "LLM Provider"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "93cfd1e4-b310-d7a1-f6de-c89f841e6243",
+      "name": "Parse Outline",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3560,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Parse balasan LLM jadi { title, summary, outline }.\n// Node ini sengaja tidak pernah melempar error: kalau JSON-nya rusak, ia hanya\n// menandai outline_valid = false supaya alur bisa retry / turun ke mode teks.\nconst SOURCE_NODE = \"Build Outline Request\";\n\nconst MAX_DEPTH = 3;\nconst MAX_CHILDREN = 8;\nconst MAX_LABEL = 80;\n\nconst response = $input.first().json;\nconst previous = $(SOURCE_NODE).first().json;\n\nconst choice = response?.choices?.[0];\nconst rawContent = choice?.message?.content ?? choice?.text ?? '';\nconst text = (Array.isArray(rawContent) ? rawContent.map((p) => p?.text ?? '').join('') : String(rawContent)).trim();\n\nfunction extractJson(input) {\n  const unfenced = input\n    .replace(/^\\s*```[a-z]*\\s*\\n?/i, '')\n    .replace(/\\n?```\\s*$/i, '')\n    .trim();\n\n  try {\n    return JSON.parse(unfenced);\n  } catch (error) {\n    // Model kadang menambahkan kalimat pembuka — ambil objek JSON terluar saja.\n    const start = unfenced.indexOf('{');\n    const end = unfenced.lastIndexOf('}');\n    if (start === -1 || end <= start) return null;\n    try {\n      return JSON.parse(unfenced.slice(start, end + 1));\n    } catch (innerError) {\n      return null;\n    }\n  }\n}\n\nfunction cleanLabel(value) {\n  return String(value ?? '')\n    .replace(/\\s+/g, ' ')\n    .replace(/^[\\s>#*+-]+/, '')\n    .replace(/^\\d+\\.\\s+/, '')\n    .trim()\n    .slice(0, MAX_LABEL);\n}\n\nfunction normalizeOutline(nodes, depth) {\n  if (!Array.isArray(nodes) || depth > MAX_DEPTH) return [];\n  const result = [];\n  for (const node of nodes.slice(0, MAX_CHILDREN)) {\n    const label = cleanLabel(typeof node === 'string' ? node : (node?.title ?? node?.name));\n    if (!label) continue;\n    const children = typeof node === 'string' ? [] : normalizeOutline(node?.children, depth + 1);\n    result.push(children.length ? { title: label, children } : { title: label });\n  }\n  return result;\n}\n\nconst parsed = extractJson(text);\nconst outline = normalizeOutline(parsed?.outline, 1);\nconst summary = String(parsed?.summary ?? '').trim();\nconst title = cleanLabel(parsed?.title) || cleanLabel(outline[0]?.title) || 'Catatan Suara';\n\nconst outlineValid = outline.length > 0 && summary.length > 0;\n\nreturn [\n  {\n    json: {\n      chat_id: previous.chat_id,\n      message_id: previous.message_id,\n      sent_at: previous.sent_at,\n      caption: previous.caption,\n      duration_sec: previous.duration_sec,\n      part_count: previous.part_count,\n      transcript_raw: previous.transcript_raw,\n      transcript_corrected: previous.transcript_corrected,\n      correction_applied: previous.correction_applied,\n      outline_valid: outlineValid,\n      title,\n      summary: summary || String(previous.transcript_corrected ?? '').slice(0, 600),\n      outline,\n      llm_raw_preview: outlineValid ? '' : text.slice(0, 400),\n    },\n  },\n];\n"
+      }
+    },
+    {
+      "id": "1259db07-87da-f06c-e8e9-5f021b42180c",
+      "name": "Guard: Outline Valid",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3780,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "af228123-1d98-2954-14bd-c9f7c6c9cdd4",
+              "leftValue": "={{ $json.outline_valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "ecaea27e-3e72-726b-6957-052084ecc628",
+      "name": "Build Outline Retry Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3780,
+        560
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Susun body request LLM untuk ringkasan + outline mind map.\n// Node yang sama dipakai untuk percobaan pertama dan percobaan ulang; saat\n// RETRY_MODE aktif, instruksi tambahan soal JSON valid ikut dikirim.\nconst SYSTEM_PROMPT = \"Kamu adalah notulis profesional. Dari transkrip rapat/brainstorm Bahasa Indonesia, hasilkan ringkasan dan outline mind map.\\n\\nATURAN ISI:\\n1. Semua output dalam Bahasa Indonesia.\\n2. Hanya gunakan informasi yang ada di transkrip. Dilarang mengarang, menebak, atau menambah rekomendasi yang tidak diucapkan.\\n3. `summary` = 3-6 kalimat padat berisi inti pembahasan dan keputusan. Bukan daftar, bukan bullet.\\n4. `title` = judul singkat maksimal 8 kata yang menggambarkan isi rekaman.\\n5. `outline` = struktur mind map:\\n   - Level 1: 1 node akar saja, isinya sama dengan `title`.\\n   - Level 2: 3-7 tema besar.\\n   - Level 3: detail/poin di bawah tiap tema, maksimal 6 per tema.\\n   - MAKSIMAL 3 level. Dilarang membuat level ke-4.\\n6. Teks tiap node maksimal 60 karakter, ringkas seperti judul, tanpa tanda baca di akhir.\\n7. Kalau ada action item / keputusan, jadikan salah satu tema level 2 tersendiri.\\n8. Jangan menaruh markdown (#, *, -) di dalam nilai `title`.\\n\\nFORMAT OUTPUT — balas HANYA dengan objek JSON valid, tanpa blok kode, tanpa teks lain:\\n{\\n  \\\"title\\\": \\\"string\\\",\\n  \\\"summary\\\": \\\"string\\\",\\n  \\\"outline\\\": [\\n    {\\n      \\\"title\\\": \\\"string\\\",\\n      \\\"children\\\": [\\n        { \\\"title\\\": \\\"string\\\", \\\"children\\\": [ { \\\"title\\\": \\\"string\\\" } ] }\\n      ]\\n    }\\n  ]\\n}\\n\\nKAMUS EJAAN (pakai persis seperti ini bila muncul):\\nBrand & nama produk: Zaneva, Elyasr, Be.Syari, Oberbe, Muslimah Swimwear, Yaumiah\\nIstilah bisnis: ROAS, ROI, HPP, omzet, margin, gross profit, net profit, cashflow, CPA, CPM, CTR, AOV, SKU, COD, closing, reseller, affiliate, endorse, marketplace, funnel, landing page, retargeting, budget harian, content plan, stock opname, pre-order, restock, supplier, invoice, purchase order, cash on delivery\";\nconst RETRY_MODE = true;\n\nconst config = $('Config').first().json;\nconst source = RETRY_MODE ? $('Parse Correction').first().json : $input.first().json;\nconst transcript = String(source.transcript_corrected ?? source.transcript_raw ?? '').trim();\n\nconst messages = [{ role: 'system', content: SYSTEM_PROMPT }];\n\nif (RETRY_MODE) {\n  messages.push({\n    role: 'system',\n    content:\n      'PERCOBAAN ULANG. Balasan sebelumnya bukan JSON valid. Balas HANYA satu objek JSON valid ' +\n      'sesuai skema di atas — tanpa blok kode, tanpa komentar, tanpa teks pembuka atau penutup. ' +\n      'Pastikan seluruh tanda kurung dan tanda kutip tertutup rapi.',\n  });\n}\n\nmessages.push({ role: 'user', content: transcript });\n\nconst body = {\n  model: config.llm_model,\n  temperature: RETRY_MODE ? 0 : Number(config.llm_temperature_outline ?? 0.3),\n  messages,\n};\n\n// Beberapa provider OpenAI-compatible belum mendukung response_format —\n// matikan lewat field `llm_json_mode` di node Config kalau provider menolak.\nif (config.llm_json_mode === true || config.llm_json_mode === 'true') {\n  body.response_format = { type: 'json_object' };\n}\n\nreturn [\n  {\n    json: {\n      ...source,\n      llm_url: `${String(config.llm_base_url).replace(/\\/+$/, '')}/chat/completions`,\n      body: JSON.stringify(body),\n    },\n  },\n];\n"
+      }
+    },
+    {
+      "id": "08a8d383-bab8-0c9c-41fc-c7e72f100eba",
+      "name": "LLM: Generate Outline (Retry)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4000,
+        560
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.llm_url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.body }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_LLM_CREDENTIAL_ID",
+          "name": "LLM Provider"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "b46bdf49-2fe2-6baf-f567-8ec9eae4b11e",
+      "name": "Parse Outline Retry",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4220,
+        560
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Parse balasan LLM jadi { title, summary, outline }.\n// Node ini sengaja tidak pernah melempar error: kalau JSON-nya rusak, ia hanya\n// menandai outline_valid = false supaya alur bisa retry / turun ke mode teks.\nconst SOURCE_NODE = \"Build Outline Retry Request\";\n\nconst MAX_DEPTH = 3;\nconst MAX_CHILDREN = 8;\nconst MAX_LABEL = 80;\n\nconst response = $input.first().json;\nconst previous = $(SOURCE_NODE).first().json;\n\nconst choice = response?.choices?.[0];\nconst rawContent = choice?.message?.content ?? choice?.text ?? '';\nconst text = (Array.isArray(rawContent) ? rawContent.map((p) => p?.text ?? '').join('') : String(rawContent)).trim();\n\nfunction extractJson(input) {\n  const unfenced = input\n    .replace(/^\\s*```[a-z]*\\s*\\n?/i, '')\n    .replace(/\\n?```\\s*$/i, '')\n    .trim();\n\n  try {\n    return JSON.parse(unfenced);\n  } catch (error) {\n    // Model kadang menambahkan kalimat pembuka — ambil objek JSON terluar saja.\n    const start = unfenced.indexOf('{');\n    const end = unfenced.lastIndexOf('}');\n    if (start === -1 || end <= start) return null;\n    try {\n      return JSON.parse(unfenced.slice(start, end + 1));\n    } catch (innerError) {\n      return null;\n    }\n  }\n}\n\nfunction cleanLabel(value) {\n  return String(value ?? '')\n    .replace(/\\s+/g, ' ')\n    .replace(/^[\\s>#*+-]+/, '')\n    .replace(/^\\d+\\.\\s+/, '')\n    .trim()\n    .slice(0, MAX_LABEL);\n}\n\nfunction normalizeOutline(nodes, depth) {\n  if (!Array.isArray(nodes) || depth > MAX_DEPTH) return [];\n  const result = [];\n  for (const node of nodes.slice(0, MAX_CHILDREN)) {\n    const label = cleanLabel(typeof node === 'string' ? node : (node?.title ?? node?.name));\n    if (!label) continue;\n    const children = typeof node === 'string' ? [] : normalizeOutline(node?.children, depth + 1);\n    result.push(children.length ? { title: label, children } : { title: label });\n  }\n  return result;\n}\n\nconst parsed = extractJson(text);\nconst outline = normalizeOutline(parsed?.outline, 1);\nconst summary = String(parsed?.summary ?? '').trim();\nconst title = cleanLabel(parsed?.title) || cleanLabel(outline[0]?.title) || 'Catatan Suara';\n\nconst outlineValid = outline.length > 0 && summary.length > 0;\n\nreturn [\n  {\n    json: {\n      chat_id: previous.chat_id,\n      message_id: previous.message_id,\n      sent_at: previous.sent_at,\n      caption: previous.caption,\n      duration_sec: previous.duration_sec,\n      part_count: previous.part_count,\n      transcript_raw: previous.transcript_raw,\n      transcript_corrected: previous.transcript_corrected,\n      correction_applied: previous.correction_applied,\n      outline_valid: outlineValid,\n      title,\n      summary: summary || String(previous.transcript_corrected ?? '').slice(0, 600),\n      outline,\n      llm_raw_preview: outlineValid ? '' : text.slice(0, 400),\n    },\n  },\n];\n"
+      }
+    },
+    {
+      "id": "39e71073-a44f-8d3d-1335-0529f83ff6ca",
+      "name": "Guard: Outline Valid (Retry)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4440,
+        560
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "5fe03425-36fe-10d8-79fa-0148a8d54db7",
+              "leftValue": "={{ $json.outline_valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "20501e63-1a49-8b48-fb49-e8affa25861c",
+      "name": "Outline to Markdown",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4660,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Ubah outline JSON jadi markdown heading (#, ##, ###) lalu rakit body request\n// untuk render service. Body di-JSON.stringify() di sini dan dikirim sebagai\n// Raw body karena isinya teks bebas dari LLM.\nconst MAX_DEPTH = 3;\n\nconst config = $('Config').first().json;\nconst source = $input.first().json;\n\nfunction cleanLabel(value) {\n  return String(value ?? '')\n    .replace(/\\s+/g, ' ')\n    .replace(/^[\\s>#*+-]+/, '')\n    .replace(/^\\d+\\.\\s+/, '')\n    .trim();\n}\n\nconst entries = [];\n\nfunction walk(nodes, depth) {\n  for (const node of Array.isArray(nodes) ? nodes : []) {\n    const label = cleanLabel(typeof node === 'string' ? node : (node?.title ?? node?.name));\n    if (!label) continue;\n\n    if (depth <= MAX_DEPTH) {\n      entries.push({ kind: 'heading', text: `${'#'.repeat(depth)} ${label}` });\n    } else {\n      // Pengaman kalau LLM tetap mengirim level 4+: turunkan jadi bullet\n      // supaya tidak ada poin yang hilang dari mind map.\n      entries.push({ kind: 'bullet', text: `${'  '.repeat(depth - MAX_DEPTH - 1)}- ${label}` });\n    }\n    walk(typeof node === 'string' ? null : node?.children, depth + 1);\n  }\n}\n\nwalk(source.outline, 1);\n\nconst lines = [];\nentries.forEach((entry, i) => {\n  if (i > 0 && (entry.kind === 'heading' || entries[i - 1].kind === 'heading')) lines.push('');\n  lines.push(entry.text);\n});\n\nconst markdown = lines.join('\\n').trim();\n\nconst body = {\n  markdown,\n  width: Number(config.mindmap_width ?? 1600),\n  theme: String(config.mindmap_theme ?? 'light'),\n};\n\nreturn [\n  {\n    json: {\n      ...source,\n      markdown,\n      render_url: `${String(config.render_base_url).replace(/\\/+$/, '')}/render`,\n      body: JSON.stringify(body),\n    },\n  },\n];\n"
+      }
+    },
+    {
+      "id": "bbb0795f-7007-fae9-ddae-07e02df5745b",
+      "name": "Render Mindmap",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4880,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.render_url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.body }}",
+        "options": {
+          "timeout": 120000,
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_RENDER_CREDENTIAL_ID",
+          "name": "Render Service"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "693acf6d-4dc7-7508-5ade-27a992769c89",
+      "name": "Telegram: Kirim Mindmap",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        5100,
+        300
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendPhoto",
+        "chatId": "={{ $('Extract Audio').first().json.chat_id }}",
+        "binaryData": true,
+        "binaryPropertyName": "data",
+        "additionalFields": {
+          "caption": "={{ '🧠 ' + $('Outline to Markdown').first().json.title }}",
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram — Notulensi Bot"
+        }
+      }
+    },
+    {
+      "id": "29ce6840-64d5-50e3-606b-8c5befca1494",
+      "name": "Build Summary Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5320,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Rakit pesan ringkasan untuk Telegram (parse_mode HTML).\nconst WITH_MINDMAP = true;\nconst TELEGRAM_LIMIT = 4000;\n\nfunction pick(nodeName) {\n  try {\n    return $(nodeName).first().json ?? null;\n  } catch (error) {\n    return null;\n  }\n}\n\n// Node ini dipakai oleh jalur dengan dan tanpa mind map, jadi sumber datanya\n// dicari dari kandidat yang benar-benar sempat berjalan.\nconst candidates = ['Outline to Markdown', 'Parse Outline Retry', 'Parse Outline']\n  .map(pick)\n  .filter(Boolean);\nconst data = candidates.find((item) => item.outline_valid) ?? candidates[0] ?? pick('Parse Correction') ?? {};\n\nfunction escapeHtml(value) {\n  return String(value ?? '')\n    .replace(/&/g, '&amp;')\n    .replace(/</g, '&lt;')\n    .replace(/>/g, '&gt;');\n}\n\nfunction formatDuration(seconds) {\n  const total = Math.max(0, Math.round(Number(seconds) || 0));\n  if (!total) return '';\n  const minutes = Math.floor(total / 60);\n  const rest = total % 60;\n  return minutes ? `${minutes} mnt ${rest} dtk` : `${rest} dtk`;\n}\n\nfunction formatDate(iso) {\n  try {\n    return new Date(iso).toLocaleString('id-ID', {\n      timeZone: 'Asia/Jakarta',\n      day: '2-digit',\n      month: 'short',\n      year: 'numeric',\n      hour: '2-digit',\n      minute: '2-digit',\n    });\n  } catch (error) {\n    return '';\n  }\n}\n\nlet durationSec = Number(data.duration_sec ?? 0);\nconst prepared = pick('Prepare Audio');\nif (!durationSec && prepared?.durationSec) durationSec = Number(prepared.durationSec);\n\nconst metaParts = [formatDuration(durationSec), formatDate(data.sent_at)].filter(Boolean);\n\nconst lines = [`🗒 <b>${escapeHtml(data.title ?? 'Catatan Suara')}</b>`];\nif (metaParts.length) lines.push(`<i>${escapeHtml(metaParts.join(' · '))}</i>`);\nlines.push('', escapeHtml(data.summary ?? '').trim());\n\nconst outline = Array.isArray(data.outline) ? data.outline : [];\nconst themes = outline.length === 1 && Array.isArray(outline[0]?.children) ? outline[0].children : outline;\n\nif (themes.length) {\n  lines.push('', '<b>Poin utama</b>');\n  for (const theme of themes) {\n    lines.push(`• <b>${escapeHtml(theme?.title)}</b>`);\n    for (const child of Array.isArray(theme?.children) ? theme.children : []) {\n      lines.push(`   ◦ ${escapeHtml(child?.title)}`);\n    }\n  }\n}\n\nif (!WITH_MINDMAP) {\n  lines.push('', '<i>⚠️ Mind map gagal dibuat kali ini — ringkasan tetap dikirim.</i>');\n}\n\nlet text = lines.join('\\n').replace(/\\n{3,}/g, '\\n\\n').trim();\nif (text.length > TELEGRAM_LIMIT) {\n  text = `${text.slice(0, TELEGRAM_LIMIT - 30).trim()}\\n\\n<i>… (dipotong)</i>`;\n}\n\nreturn [\n  {\n    json: {\n      chat_id: data.chat_id ?? $('Extract Audio').first().json.chat_id,\n      title: data.title ?? 'Catatan Suara',\n      summary_text: text,\n    },\n  },\n];\n"
+      }
+    },
+    {
+      "id": "aadcc1e5-a6a8-bea8-a075-543ea132ddfe",
+      "name": "Telegram: Kirim Ringkasan",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        5540,
+        300
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.summary_text }}",
+        "additionalFields": {
+          "parse_mode": "HTML",
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram — Notulensi Bot"
+        }
+      }
+    },
+    {
+      "id": "f2614d8d-c5af-e30d-09dd-7e18665c18ab",
+      "name": "Build Summary Message (Tanpa Mindmap)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5320,
+        760
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Rakit pesan ringkasan untuk Telegram (parse_mode HTML).\nconst WITH_MINDMAP = false;\nconst TELEGRAM_LIMIT = 4000;\n\nfunction pick(nodeName) {\n  try {\n    return $(nodeName).first().json ?? null;\n  } catch (error) {\n    return null;\n  }\n}\n\n// Node ini dipakai oleh jalur dengan dan tanpa mind map, jadi sumber datanya\n// dicari dari kandidat yang benar-benar sempat berjalan.\nconst candidates = ['Outline to Markdown', 'Parse Outline Retry', 'Parse Outline']\n  .map(pick)\n  .filter(Boolean);\nconst data = candidates.find((item) => item.outline_valid) ?? candidates[0] ?? pick('Parse Correction') ?? {};\n\nfunction escapeHtml(value) {\n  return String(value ?? '')\n    .replace(/&/g, '&amp;')\n    .replace(/</g, '&lt;')\n    .replace(/>/g, '&gt;');\n}\n\nfunction formatDuration(seconds) {\n  const total = Math.max(0, Math.round(Number(seconds) || 0));\n  if (!total) return '';\n  const minutes = Math.floor(total / 60);\n  const rest = total % 60;\n  return minutes ? `${minutes} mnt ${rest} dtk` : `${rest} dtk`;\n}\n\nfunction formatDate(iso) {\n  try {\n    return new Date(iso).toLocaleString('id-ID', {\n      timeZone: 'Asia/Jakarta',\n      day: '2-digit',\n      month: 'short',\n      year: 'numeric',\n      hour: '2-digit',\n      minute: '2-digit',\n    });\n  } catch (error) {\n    return '';\n  }\n}\n\nlet durationSec = Number(data.duration_sec ?? 0);\nconst prepared = pick('Prepare Audio');\nif (!durationSec && prepared?.durationSec) durationSec = Number(prepared.durationSec);\n\nconst metaParts = [formatDuration(durationSec), formatDate(data.sent_at)].filter(Boolean);\n\nconst lines = [`🗒 <b>${escapeHtml(data.title ?? 'Catatan Suara')}</b>`];\nif (metaParts.length) lines.push(`<i>${escapeHtml(metaParts.join(' · '))}</i>`);\nlines.push('', escapeHtml(data.summary ?? '').trim());\n\nconst outline = Array.isArray(data.outline) ? data.outline : [];\nconst themes = outline.length === 1 && Array.isArray(outline[0]?.children) ? outline[0].children : outline;\n\nif (themes.length) {\n  lines.push('', '<b>Poin utama</b>');\n  for (const theme of themes) {\n    lines.push(`• <b>${escapeHtml(theme?.title)}</b>`);\n    for (const child of Array.isArray(theme?.children) ? theme.children : []) {\n      lines.push(`   ◦ ${escapeHtml(child?.title)}`);\n    }\n  }\n}\n\nif (!WITH_MINDMAP) {\n  lines.push('', '<i>⚠️ Mind map gagal dibuat kali ini — ringkasan tetap dikirim.</i>');\n}\n\nlet text = lines.join('\\n').replace(/\\n{3,}/g, '\\n\\n').trim();\nif (text.length > TELEGRAM_LIMIT) {\n  text = `${text.slice(0, TELEGRAM_LIMIT - 30).trim()}\\n\\n<i>… (dipotong)</i>`;\n}\n\nreturn [\n  {\n    json: {\n      chat_id: data.chat_id ?? $('Extract Audio').first().json.chat_id,\n      title: data.title ?? 'Catatan Suara',\n      summary_text: text,\n    },\n  },\n];\n"
+      }
+    },
+    {
+      "id": "8b78e27e-0444-4b5e-d910-1d55f6b76710",
+      "name": "Telegram: Kirim Ringkasan (Tanpa Mindmap)",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        5540,
+        760
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.summary_text }}",
+        "additionalFields": {
+          "parse_mode": "HTML",
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram — Notulensi Bot"
+        }
+      }
+    },
+    {
+      "id": "9b49e653-4f58-7972-1ad1-3b1d54c2609b",
+      "name": "Build Transcript Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5760,
+        520
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Kirim transkrip bersih: sebagai pesan biasa kalau pendek, sebagai file .txt\n// kalau panjang (batas pesan Telegram 4096 karakter).\nconst config = $('Config').first().json;\nconst data = $('Parse Correction').first().json;\n\nconst transcript = String(data.transcript_corrected ?? data.transcript_raw ?? '').trim();\nconst limit = Number(config.max_transcript_inline ?? 3000);\nconst chatId = data.chat_id ?? $('Extract Audio').first().json.chat_id;\n\nfunction escapeHtml(value) {\n  return String(value ?? '')\n    .replace(/&/g, '&amp;')\n    .replace(/</g, '&lt;')\n    .replace(/>/g, '&gt;');\n}\n\nfunction stamp(iso) {\n  const date = new Date(iso ?? Date.now());\n  const valid = Number.isNaN(date.getTime()) ? new Date() : date;\n  return valid.toISOString().slice(0, 16).replace('T', '-').replace(':', '');\n}\n\nif (transcript.length <= limit) {\n  return [\n    {\n      json: {\n        chat_id: chatId,\n        is_file: false,\n        transcript_text: `📝 <b>Transkrip</b>\\n\\n${escapeHtml(transcript)}`,\n      },\n    },\n  ];\n}\n\nconst header = [\n  data.title ? `Judul: ${data.title}` : null,\n  `Tanggal: ${data.sent_at ?? ''}`,\n  '',\n  '',\n].filter((line) => line !== null);\n\nconst content = `${header.join('\\n')}${transcript}\\n`;\nconst fileName = `transkrip-${stamp(data.sent_at)}.txt`;\n\nreturn [\n  {\n    json: {\n      chat_id: chatId,\n      is_file: true,\n      file_name: fileName,\n      transcript_text: '',\n    },\n    binary: {\n      data: {\n        data: Buffer.from(content, 'utf8').toString('base64'),\n        mimeType: 'text/plain',\n        fileName,\n        fileExtension: 'txt',\n      },\n    },\n  },\n];\n"
+      }
+    },
+    {
+      "id": "84eb2c4a-69a8-240c-969a-8b4e92e46295",
+      "name": "Guard: Transkrip Panjang",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        5980,
+        520
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "667925a8-3d68-ec77-0efb-2245d1cd638b",
+              "leftValue": "={{ $json.is_file }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "2d1a2f60-fa10-727e-9915-5c7c5844fd00",
+      "name": "Telegram: Kirim Transkrip (File)",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        6200,
+        420
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendDocument",
+        "chatId": "={{ $json.chat_id }}",
+        "binaryData": true,
+        "binaryPropertyName": "data",
+        "additionalFields": {
+          "caption": "📝 Transkrip lengkap",
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram — Notulensi Bot"
+        }
+      }
+    },
+    {
+      "id": "32aa90b0-3b43-66b1-367f-e1e7fd3e10b3",
+      "name": "Telegram: Kirim Transkrip (Teks)",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        6200,
+        620
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.transcript_text }}",
+        "additionalFields": {
+          "parse_mode": "HTML",
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram — Notulensi Bot"
+        }
+      }
+    },
+    {
+      "id": "016ca7b3-f8f1-9762-c4aa-67f844a72555",
+      "name": "Stage: Bukan Audio",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        260,
+        1120
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "707d8b0c-0d1a-6581-d21a-5d78974219c6",
+              "name": "error_stage",
+              "value": "Bukan pesan suara",
+              "type": "string"
+            },
+            {
+              "id": "cf1d02d8-94a7-ebd6-da3e-cdf4dffe36e5",
+              "name": "error_message",
+              "value": "Kirim voice note atau file audio ya — pesan lain tidak diproses.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "4b7482d7-fad6-90aa-537b-2c60ee51f559",
+      "name": "Stage: Unduh Gagal",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        480,
+        1120
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "d0d1a172-4e95-9fb2-cb76-18e1c1fd2598",
+              "name": "error_stage",
+              "value": "Gagal mengunduh audio",
+              "type": "string"
+            },
+            {
+              "id": "bb723e04-940c-bbc3-1018-922a73129ed1",
+              "name": "error_message",
+              "value": "File-nya tidak bisa diambil dari Telegram. Coba kirim ulang.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "21be251f-bb20-edbe-e38a-ed4ee33be9e7",
+      "name": "Stage: Siapkan Audio",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        700,
+        1120
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e56f2c2a-2a97-a651-ae6e-551246f4c86d",
+              "name": "error_stage",
+              "value": "Gagal menyiapkan audio",
+              "type": "string"
+            },
+            {
+              "id": "e05762db-26af-fe8e-527e-e05849436a42",
+              "name": "error_message",
+              "value": "Render service tidak merespons saat memproses audio. Coba lagi sebentar.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b3529f25-cbbc-b140-18fe-0a5568ab76ec",
+      "name": "Stage: Transkripsi",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1360,
+        1120
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "7c87fa2d-91bf-98e7-af21-df18e01df9e7",
+              "name": "error_stage",
+              "value": "Transkripsi gagal",
+              "type": "string"
+            },
+            {
+              "id": "51487896-fcdb-2873-db50-eb3e7ae8c265",
+              "name": "error_message",
+              "value": "Groq dan provider cadangan sama-sama gagal. Coba kirim ulang rekamannya.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "669ddf03-1a55-e059-52ee-22bcf320165d",
+      "name": "Stage: Transkrip Kosong",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2240,
+        1120
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ea23f471-8ead-1958-f81d-298ec8dda0f4",
+              "name": "error_stage",
+              "value": "Tidak ada suara terdeteksi",
+              "type": "string"
+            },
+            {
+              "id": "f3133c6f-f584-d422-af49-a1b31386274a",
+              "name": "error_message",
+              "value": "Rekamannya hening atau cuma noise, jadi tidak ada yang bisa diringkas.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a9aefb48-0a04-8371-75c3-0c30e5fa615e",
+      "name": "Stage: Koreksi",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2680,
+        1120
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "659f4bce-6d81-a1ad-453d-a875f27c0dbe",
+              "name": "error_stage",
+              "value": "Koreksi transkrip gagal",
+              "type": "string"
+            },
+            {
+              "id": "70ffe583-3eb8-43e2-23ea-4371de56cc03",
+              "name": "error_message",
+              "value": "LLM tidak merespons. Coba kirim ulang atau ganti provider di node Config.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "d18410bd-fbfe-6954-42be-9b8ec663dff2",
+      "name": "Stage: Ringkasan",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3340,
+        1120
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3568e731-5a55-534e-e20a-89cde49aa3c7",
+              "name": "error_stage",
+              "value": "Ringkasan gagal",
+              "type": "string"
+            },
+            {
+              "id": "4d857d49-48d2-315e-5897-7ea92f9bdac2",
+              "name": "error_message",
+              "value": "LLM tidak merespons saat membuat ringkasan. Coba kirim ulang.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "3ec6ed9e-3ad6-36a2-d738-d2c126f80fba",
+      "name": "Build Error Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4000,
+        1120
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Susun pesan error yang dikirim ke Telegram.\n// Semua jalur error bertemu di sini; tahap & kalimat ramahnya sudah diisi oleh\n// node \"Stage: ...\" tepat sebelum node ini.\nconst item = $input.first().json ?? {};\n\nfunction escapeHtml(value) {\n  return String(value ?? '')\n    .replace(/&/g, '&amp;')\n    .replace(/</g, '&lt;')\n    .replace(/>/g, '&gt;');\n}\n\nconst detail = String(\n  item.error?.message ??\n    item.error?.description ??\n    item.error?.error ??\n    (typeof item.error === 'string' ? item.error : '') ??\n    item.message ??\n    '',\n).trim();\n\nconst lines = [\n  `⚠️ <b>${escapeHtml(item.error_stage ?? 'Pemrosesan gagal')}</b>`,\n  escapeHtml(item.error_message ?? 'Coba kirim ulang rekamannya ya.'),\n];\n\nif (detail) {\n  lines.push('', `<code>${escapeHtml(detail.slice(0, 300))}</code>`);\n}\n\nlet chatId = item.chat_id ?? '';\nif (!chatId) {\n  try {\n    chatId = $('Extract Audio').first().json.chat_id;\n  } catch (error) {\n    chatId = '';\n  }\n}\n\nreturn [\n  {\n    json: {\n      chat_id: chatId,\n      error_text: lines.join('\\n'),\n    },\n  },\n];\n"
+      }
+    },
+    {
+      "id": "c2a66e10-5f0e-0bd7-9c24-a12649eaa808",
+      "name": "Telegram: Kirim Error",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        4220,
+        1120
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.error_text }}",
+        "additionalFields": {
+          "parse_mode": "HTML",
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram — Notulensi Bot"
+        }
+      }
+    },
+    {
+      "id": "48c648ee-d7a9-8f15-584a-fa8260b41959",
+      "name": "Sticky 47",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -640,
+        60
+      ],
+      "parameters": {
+        "width": 620,
+        "height": 200,
+        "color": 4,
+        "content": "## 1. Masuk & filter\nTrigger Telegram → node **Config** (semua setelan ada di sini) → whitelist `chat_id`.\n\nGanti provider LLM = ubah `llm_base_url`, `llm_model`, `llm_json_mode` di node Config, plus credential **LLM Provider**."
+      }
+    },
+    {
+      "id": "50a28420-7f74-9475-cc6d-560b2b301240",
+      "name": "Sticky 48",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        660,
+        60
+      ],
+      "parameters": {
+        "width": 1740,
+        "height": 200,
+        "color": 5,
+        "content": "## 2. Audio → transkrip\n**Prepare Audio** menormalkan audio (kompres opus 16k mono, potong jadi beberapa part kalau > 24MB), lalu tiap part ditranskripsi Groq Whisper. Kalau Groq gagal, part-nya diunduh ulang dan dicoba ke OpenAI Whisper."
+      }
+    },
+    {
+      "id": "f593582c-6826-c746-3b0a-5c869e568401",
+      "name": "Sticky 49",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2460,
+        60
+      ],
+      "parameters": {
+        "width": 2180,
+        "height": 200,
+        "color": 3,
+        "content": "## 3. Koreksi & outline\nBody request LLM dirakit di Code node dengan `JSON.stringify()` lalu dikirim sebagai **Raw body** — bukan \"Specify Body: JSON\" — supaya teks transkrip tidak pernah merusak struktur JSON.\n\nOutline JSON tidak valid → retry 1x → kalau tetap gagal, kirim ringkasan teks tanpa mind map."
+      }
+    },
+    {
+      "id": "0df2f3ef-000b-efd8-cbf3-73aac12b9a51",
+      "name": "Sticky 50",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        4660,
+        60
+      ],
+      "parameters": {
+        "width": 1760,
+        "height": 200,
+        "color": 6,
+        "content": "## 4. Render & balas\nOutline → markdown heading → render service (markmap + Puppeteer) → PNG. Balasan ke Telegram: mind map, ringkasan, lalu transkrip bersih (jadi file .txt kalau panjang)."
+      }
+    },
+    {
+      "id": "616c7587-eafd-0b4d-443f-d592fed09dcb",
+      "name": "Sticky 51",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        240,
+        880
+      ],
+      "parameters": {
+        "width": 4000,
+        "height": 200,
+        "color": 2,
+        "content": "## Jalur error\nSetiap tahap punya error output sendiri yang bermuara ke satu pesan Telegram — tidak ada kegagalan yang diam-diam."
+      }
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Guard: Chat Diizinkan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guard: Chat Diizinkan": {
+      "main": [
+        [
+          {
+            "node": "Extract Audio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Abaikan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Audio": {
+      "main": [
+        [
+          {
+            "node": "Guard: Ada Audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guard: Ada Audio": {
+      "main": [
+        [
+          {
+            "node": "Download Audio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stage: Bukan Audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Audio": {
+      "main": [
+        [
+          {
+            "node": "Prepare Audio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stage: Unduh Gagal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Audio": {
+      "main": [
+        [
+          {
+            "node": "Split Parts",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stage: Siapkan Audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Parts": {
+      "main": [
+        [
+          {
+            "node": "Download Part",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Part": {
+      "main": [
+        [
+          {
+            "node": "Transcribe (Groq)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcribe (Groq)": {
+      "main": [
+        [
+          {
+            "node": "Merge Transcript Parts",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Download Part (Fallback)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Part (Fallback)": {
+      "main": [
+        [
+          {
+            "node": "Transcribe (OpenAI Fallback)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcribe (OpenAI Fallback)": {
+      "main": [
+        [
+          {
+            "node": "Merge Transcript Parts",
+            "type": "main",
+            "index": 1
+          }
+        ],
+        [
+          {
+            "node": "Stage: Transkripsi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Transcript Parts": {
+      "main": [
+        [
+          {
+            "node": "Merge Transcript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Transcript": {
+      "main": [
+        [
+          {
+            "node": "Guard: Transkrip Ada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guard: Transkrip Ada": {
+      "main": [
+        [
+          {
+            "node": "Build Correction Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stage: Transkrip Kosong",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Correction Request": {
+      "main": [
+        [
+          {
+            "node": "LLM: Correct Terms",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM: Correct Terms": {
+      "main": [
+        [
+          {
+            "node": "Parse Correction",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stage: Koreksi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Correction": {
+      "main": [
+        [
+          {
+            "node": "Build Outline Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Outline Request": {
+      "main": [
+        [
+          {
+            "node": "LLM: Generate Outline",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM: Generate Outline": {
+      "main": [
+        [
+          {
+            "node": "Parse Outline",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stage: Ringkasan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Outline": {
+      "main": [
+        [
+          {
+            "node": "Guard: Outline Valid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guard: Outline Valid": {
+      "main": [
+        [
+          {
+            "node": "Outline to Markdown",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Outline Retry Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Outline Retry Request": {
+      "main": [
+        [
+          {
+            "node": "LLM: Generate Outline (Retry)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM: Generate Outline (Retry)": {
+      "main": [
+        [
+          {
+            "node": "Parse Outline Retry",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stage: Ringkasan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Outline Retry": {
+      "main": [
+        [
+          {
+            "node": "Guard: Outline Valid (Retry)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guard: Outline Valid (Retry)": {
+      "main": [
+        [
+          {
+            "node": "Outline to Markdown",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Summary Message (Tanpa Mindmap)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Outline to Markdown": {
+      "main": [
+        [
+          {
+            "node": "Render Mindmap",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Render Mindmap": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Kirim Mindmap",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Summary Message (Tanpa Mindmap)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram: Kirim Mindmap": {
+      "main": [
+        [
+          {
+            "node": "Build Summary Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Summary Message": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Kirim Ringkasan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram: Kirim Ringkasan": {
+      "main": [
+        [
+          {
+            "node": "Build Transcript Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Summary Message (Tanpa Mindmap)": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Kirim Ringkasan (Tanpa Mindmap)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram: Kirim Ringkasan (Tanpa Mindmap)": {
+      "main": [
+        [
+          {
+            "node": "Build Transcript Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Transcript Message": {
+      "main": [
+        [
+          {
+            "node": "Guard: Transkrip Panjang",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guard: Transkrip Panjang": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Kirim Transkrip (File)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram: Kirim Transkrip (Teks)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stage: Bukan Audio": {
+      "main": [
+        [
+          {
+            "node": "Build Error Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stage: Unduh Gagal": {
+      "main": [
+        [
+          {
+            "node": "Build Error Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stage: Siapkan Audio": {
+      "main": [
+        [
+          {
+            "node": "Build Error Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stage: Transkripsi": {
+      "main": [
+        [
+          {
+            "node": "Build Error Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stage: Transkrip Kosong": {
+      "main": [
+        [
+          {
+            "node": "Build Error Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stage: Koreksi": {
+      "main": [
+        [
+          {
+            "node": "Build Error Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stage: Ringkasan": {
+      "main": [
+        [
+          {
+            "node": "Build Error Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Error Message": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Kirim Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all"
+  },
+  "pinData": {},
+  "tags": [],
+  "meta": {
+    "instanceId": "voice-to-mindmap"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "notulensi-n8n-workflow",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Sumber & builder untuk workflow n8n Voice-to-Mindmap",
+  "type": "module",
+  "scripts": {
+    "build": "node build-workflow.mjs",
+    "test": "node build-workflow.mjs && node test/run-tests.mjs"
+  }
+}
