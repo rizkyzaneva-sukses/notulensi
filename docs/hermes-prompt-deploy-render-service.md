@@ -1,5 +1,16 @@
 # Prompt untuk Hermes — Deploy render-service ke EasyPanel
 
+> **Status: deployment sudah selesai (Agustus 2026).** Service `notulensi-render` sudah live
+> di `https://notulen.mrrizky.my.id` (EasyPanel, project *creative*), `/healthz` dan `/render`
+> sudah dites. `SERVICE_TOKEN` disimpan di password manager Rizky dan credential *Render Service*
+> di n8n — tidak dicatat di file ini.
+>
+> File ini disimpan sebagai template untuk re-deploy / migrasi. Isi ulang 4 titik `<...>` di
+> bagian atas kalau dipakai lagi. **Jangan pernah tempel token asli ke file ini** — repo GitHub
+> `rizkyzaneva-sukses/notulensi` bersifat publik.
+
+---
+
 Tempel prompt di bawah ini ke Hermes. Isi dulu 4 titik `<...>` di bagian atas sebelum dikirim.
 
 ---
@@ -19,8 +30,8 @@ port 3000 di dalam container.
 
 - Repo GitHub: `<isi: contoh https://github.com/rizkyzaneva-sukses/notulensi>`
 - Build path di dalam repo: `render-service`
-- URL/IP EasyPanel dashboard saya: `<isi: contoh https://easypanel.domain-saya.com atau http://43.129.38.56:3000>`
-- Domain yang mau dipakai untuk service ini: `<isi: contoh notulensi-render.domain-saya.com>`
+- URL/IP EasyPanel dashboard saya: `<isi: contoh http://43.129.38.56:3000, masukkan di project creative>`
+- Domain yang mau dipakai untuk service ini: `<isi: contoh notulen.mrrizky.my.id>`
 
 Saya sudah login ke EasyPanel di browser ini / silakan minta saya login kalau perlu — jangan
 pernah minta saya ketik ulang password di tempat lain.
@@ -35,10 +46,10 @@ pernah minta saya ketik ulang password di tempat lain.
 3. Generate token acak yang aman (32+ karakter hex, misal pakai `openssl rand -hex 24` kalau kamu
    punya akses shell, atau generator token acak lain) untuk dipakai sebagai `SERVICE_TOKEN` di
    bawah. **Tampilkan token ini ke saya di akhir supaya saya bisa masukkan ke n8n** — jangan
-   simpan di tempat lain.
+   simpan di tempat lain, dan JANGAN tulis ke file dokumentasi mana pun.
 4. Isi Environment Variables:
    ```
-   SERVICE_TOKEN=<token acak yang kamu generate di langkah 3>
+   SERVICE_TOKEN=<token acak yang kamu generate di langkah 3 — jangan tulis di file>
    PUBLIC_BASE_URL=https://<domain yang saya beri>
    PORT=3000
    AUDIO_WORK_DIR=/data/audio
@@ -64,6 +75,6 @@ pernah minta saya ketik ulang password di tempat lain.
 ## Laporkan ke saya di akhir
 
 - URL publik service: `https://<domain>`
-- `SERVICE_TOKEN` yang di-generate (saya butuh ini untuk credential di n8n)
+- `SERVICE_TOKEN` yang di-generate — kirim ke saya via chat (saya tempel ke password manager & n8n), **jangan tulis ke file dokumentasi apa pun**
 - Konfirmasi `/healthz` dan `/render` sudah dites dan berhasil
 - Kalau ada langkah yang gagal atau butuh keputusan saya (nama domain belum ada DNS-nya, dsb), berhenti dan tanya — jangan menebak.
