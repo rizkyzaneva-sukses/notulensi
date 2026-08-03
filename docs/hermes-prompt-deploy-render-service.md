@@ -1,7 +1,7 @@
 # Prompt untuk Hermes — Deploy render-service ke EasyPanel
 
 > **Status: deployment sudah selesai (Agustus 2026).** Service `notulensi-render` sudah live
-> di `https://notulen.mrrizky.my.id` (EasyPanel, project *creative*), `/healthz` dan `/render`
+> di `https://notulen.maulanacorp.my.id` (EasyPanel, project *creative*), `/healthz` dan `/render`
 > sudah dites. `SERVICE_TOKEN` disimpan di password manager Rizky dan credential *Render Service*
 > di n8n — tidak dicatat di file ini.
 >
