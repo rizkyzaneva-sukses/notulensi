@@ -45,4 +45,6 @@ EXPOSE 8081
 # kalau tidak dikirim sebagai argumen (perilaku bawaan binary-nya).
 # --local WAJIB lewat argumen — tidak ada env var untuk flag ini — supaya limit
 # download/upload standar (20MB/50MB) dihilangkan (jadi sampai 2000MB).
-ENTRYPOINT ["telegram-bot-api", "--local", "--dir=/data/work", "--temp-dir=/data/tmp", "--http-port=8081"]
+# --verbosity 2: defaultnya 0 (nyaris tidak ada log) — dinaikkan supaya request
+# masuk & error kelihatan di log container, berguna untuk debugging.
+ENTRYPOINT ["telegram-bot-api", "--local", "--dir=/data/work", "--temp-dir=/data/tmp", "--http-port=8081", "--verbosity=2"]
