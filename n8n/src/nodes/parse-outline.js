@@ -67,6 +67,7 @@ return [
   {
     json: {
       chat_id: previous.chat_id,
+      thread_id: previous.thread_id,
       message_id: previous.message_id,
       sent_at: previous.sent_at,
       caption: previous.caption,

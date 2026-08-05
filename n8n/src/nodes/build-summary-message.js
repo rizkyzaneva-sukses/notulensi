@@ -83,6 +83,7 @@ return [
   {
     json: {
       chat_id: data.chat_id ?? $('Extract Audio').first().json.chat_id,
+      thread_id: data.thread_id ?? $('Extract Audio').first().json.thread_id,
       title: data.title ?? 'Catatan Suara',
       summary_text: text,
     },

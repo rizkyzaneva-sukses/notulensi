@@ -6,6 +6,7 @@ const data = $('Parse Correction').first().json;
 const transcript = String(data.transcript_corrected ?? data.transcript_raw ?? '').trim();
 const limit = Number(config.max_transcript_inline ?? 3000);
 const chatId = data.chat_id ?? $('Extract Audio').first().json.chat_id;
+const threadId = data.thread_id ?? $('Extract Audio').first().json.thread_id;
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -25,6 +26,7 @@ if (transcript.length <= limit) {
     {
       json: {
         chat_id: chatId,
+        thread_id: threadId,
         is_file: false,
         transcript_text: `📝 <b>Transkrip</b>\n\n${escapeHtml(transcript)}`,
       },
@@ -46,6 +48,7 @@ return [
   {
     json: {
       chat_id: chatId,
+      thread_id: threadId,
       is_file: true,
       file_name: fileName,
       transcript_text: '',

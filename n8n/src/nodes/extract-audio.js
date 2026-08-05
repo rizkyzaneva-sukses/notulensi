@@ -28,6 +28,9 @@ if (!media && message.document?.file_id) {
 }
 
 const chatId = String(message.chat?.id ?? '');
+// Hadir hanya kalau pesan dikirim di dalam topic grup forum; dipakai supaya
+// balasan bot ikut masuk ke topic yang sama, bukan ke topic General.
+const threadId = message.message_thread_id ?? undefined;
 const sentAt = message.date ? new Date(message.date * 1000).toISOString() : new Date().toISOString();
 
 return [
@@ -36,6 +39,7 @@ return [
       has_audio: Boolean(media),
       kind,
       chat_id: chatId,
+      thread_id: threadId,
       message_id: message.message_id ?? null,
       from: message.from?.first_name ?? '',
       caption: String(message.caption ?? '').trim(),

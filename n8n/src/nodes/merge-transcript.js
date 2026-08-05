@@ -36,6 +36,7 @@ return [
   {
     json: {
       chat_id: meta.chat_id,
+      thread_id: meta.thread_id,
       message_id: meta.message_id,
       sent_at: meta.sent_at,
       caption: meta.caption,

@@ -128,7 +128,7 @@ const stageNode = (name, position, stage, message) => ({
   },
 });
 
-const telegramSendMessage = (name, position, { chatId, text, caption }) => ({
+const telegramSendMessage = (name, position, { chatId, text, caption, messageThreadId }) => ({
   name,
   type: 'n8n-nodes-base.telegram',
   typeVersion: 1.2,
@@ -138,7 +138,14 @@ const telegramSendMessage = (name, position, { chatId, text, caption }) => ({
     operation: 'sendMessage',
     chatId,
     text: text ?? caption,
-    additionalFields: { parse_mode: 'HTML', appendAttribution: false },
+    additionalFields: {
+      parse_mode: 'HTML',
+      appendAttribution: false,
+      // Expression-nya resolve ke undefined untuk chat pribadi / grup tanpa
+      // topic — n8n melewatkan field ini dari request kalau begitu, jadi
+      // aman dipasang selalu, tidak cuma untuk grup dengan topic.
+      message_thread_id: messageThreadId,
+    },
   },
   credentials: CRED.telegram,
 });
@@ -498,6 +505,7 @@ add({
     additionalFields: {
       caption: "={{ '🧠 ' + $('Outline to Markdown').first().json.title }}",
       appendAttribution: false,
+      message_thread_id: "={{ $('Extract Audio').first().json.thread_id }}",
     },
   },
   credentials: CRED.telegram,
@@ -515,6 +523,7 @@ add(
   telegramSendMessage('Telegram: Kirim Ringkasan', [5540, 300], {
     chatId: '={{ $json.chat_id }}',
     text: '={{ $json.summary_text }}',
+    messageThreadId: '={{ $json.thread_id }}',
   }),
 );
 
@@ -530,6 +539,7 @@ add(
   telegramSendMessage('Telegram: Kirim Ringkasan (Tanpa Mindmap)', [5540, 760], {
     chatId: '={{ $json.chat_id }}',
     text: '={{ $json.summary_text }}',
+    messageThreadId: '={{ $json.thread_id }}',
   }),
 );
 
@@ -547,7 +557,11 @@ add({
     chatId: '={{ $json.chat_id }}',
     binaryData: true,
     binaryPropertyName: 'data',
-    additionalFields: { caption: '📝 Transkrip lengkap', appendAttribution: false },
+    additionalFields: {
+      caption: '📝 Transkrip lengkap',
+      appendAttribution: false,
+      message_thread_id: '={{ $json.thread_id }}',
+    },
   },
   credentials: CRED.telegram,
 });
@@ -556,6 +570,7 @@ add(
   telegramSendMessage('Telegram: Kirim Transkrip (Teks)', [6200, 620], {
     chatId: '={{ $json.chat_id }}',
     text: '={{ $json.transcript_text }}',
+    messageThreadId: '={{ $json.thread_id }}',
   }),
 );
 
@@ -581,6 +596,7 @@ add(
   telegramSendMessage('Telegram: Kirim Error', [4220, 1120], {
     chatId: '={{ $json.chat_id }}',
     text: '={{ $json.error_text }}',
+    messageThreadId: '={{ $json.thread_id }}',
   }),
 );
 
