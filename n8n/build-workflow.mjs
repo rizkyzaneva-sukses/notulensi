@@ -302,17 +302,35 @@ add({
 add(codeNode('Extract Audio', [40, 300], code('extract-audio.js')));
 add(booleanIf('Guard: Ada Audio', [260, 300], '={{ $json.has_audio }}'));
 
+// Server Telegram Bot API self-hosted (mode --local) mengembalikan file_path
+// sebagai path FILESYSTEM ABSOLUT, bukan path relatif yang bisa dipakai untuk
+// download HTTP biasa — endpoint /file/... tidak melayani request di mode ini.
+// Jadi ambil metadata dulu (getFile), lalu baca file-nya langsung dari disk
+// yang di-share (volume sama) antara container bot-api dan container n8n ini.
 add({
-  name: 'Download Audio',
+  name: 'Download Audio: Get File Info',
   type: 'n8n-nodes-base.telegram',
   typeVersion: 1.2,
   position: [480, 300],
-  parameters: { resource: 'file', operation: 'get', fileId: '={{ $json.file_id }}', download: true },
+  parameters: { resource: 'file', operation: 'get', fileId: '={{ $json.file_id }}' },
   credentials: CRED.telegram,
   onError: 'continueErrorOutput',
   retryOnFail: true,
   maxTries: 2,
   waitBetweenTries: 2000,
+});
+
+add({
+  name: 'Download Audio: Read From Disk',
+  type: 'n8n-nodes-base.readWriteFile',
+  typeVersion: 1,
+  position: [560, 300],
+  parameters: {
+    operation: 'read',
+    fileSelector: '={{ $json.file_path }}',
+    options: { dataPropertyName: 'data' },
+  },
+  onError: 'continueErrorOutput',
 });
 
 add({
@@ -658,11 +676,14 @@ connect('Guard: Chat Diizinkan', 'Extract Audio', { output: 0 });
 connect('Guard: Chat Diizinkan', 'Abaikan', { output: 1 });
 
 connect('Extract Audio', 'Guard: Ada Audio');
-connect('Guard: Ada Audio', 'Download Audio', { output: 0 });
+connect('Guard: Ada Audio', 'Download Audio: Get File Info', { output: 0 });
 connect('Guard: Ada Audio', 'Stage: Bukan Audio', { output: 1 });
 
-connect('Download Audio', 'Prepare Audio', { output: 0 });
-connect('Download Audio', 'Stage: Unduh Gagal', { output: 1 });
+connect('Download Audio: Get File Info', 'Download Audio: Read From Disk', { output: 0 });
+connect('Download Audio: Get File Info', 'Stage: Unduh Gagal', { output: 1 });
+
+connect('Download Audio: Read From Disk', 'Prepare Audio', { output: 0 });
+connect('Download Audio: Read From Disk', 'Stage: Unduh Gagal', { output: 1 });
 
 connect('Prepare Audio', 'Split Parts', { output: 0 });
 connect('Prepare Audio', 'Stage: Siapkan Audio', { output: 1 });

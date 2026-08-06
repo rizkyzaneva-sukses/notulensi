@@ -89,7 +89,8 @@ test('body LLM & render dikirim sebagai raw body', () => {
 
 test('setiap tahap kritis punya error output yang tersambung', () => {
   const withErrorOutput = [
-    'Download Audio',
+    'Download Audio: Get File Info',
+    'Download Audio: Read From Disk',
     'Prepare Audio',
     'Transcribe (Groq)',
     'Transcribe (OpenAI Fallback)',
@@ -153,6 +154,9 @@ test('tidak ada input node yang menerima lebih dari satu koneksi', () => {
     'Build Summary Message (Tanpa Mindmap)#0',
     'Build Transcript Message#0',
     'Build Error Message#0',
+    // Get File Info dan Read From Disk berjalan berurutan — errornya tidak
+    // pernah aktif bersamaan dalam satu eksekusi.
+    'Stage: Unduh Gagal#0',
   ]);
   const offenders = [...inbound.entries()]
     .filter(([key, sources]) => sources.length > 1 && !mutuallyExclusive.has(key))

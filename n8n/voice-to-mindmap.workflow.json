@@ -229,8 +229,8 @@
       }
     },
     {
-      "id": "318307b8-f458-28c8-f77e-d641e472f59d",
-      "name": "Download Audio",
+      "id": "5f4a336e-a220-d36a-02a6-ae4d0e4654ee",
+      "name": "Download Audio: Get File Info",
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
@@ -240,8 +240,7 @@
       "parameters": {
         "resource": "file",
         "operation": "get",
-        "fileId": "={{ $json.file_id }}",
-        "download": true
+        "fileId": "={{ $json.file_id }}"
       },
       "credentials": {
         "telegramApi": {
@@ -253,6 +252,24 @@
       "retryOnFail": true,
       "maxTries": 2,
       "waitBetweenTries": 2000
+    },
+    {
+      "id": "660affc4-f158-7951-7236-78455d9dbd1e",
+      "name": "Download Audio: Read From Disk",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        560,
+        300
+      ],
+      "parameters": {
+        "operation": "read",
+        "fileSelector": "={{ $json.file_path }}",
+        "options": {
+          "dataPropertyName": "data"
+        }
+      },
+      "onError": "continueErrorOutput"
     },
     {
       "id": "0b852973-c3c8-6b8d-4941-67875669f3e6",
@@ -1345,8 +1362,8 @@
       }
     },
     {
-      "id": "48c648ee-d7a9-8f15-584a-fa8260b41959",
-      "name": "Sticky 47",
+      "id": "50a28420-7f74-9475-cc6d-560b2b301240",
+      "name": "Sticky 48",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
@@ -1361,8 +1378,8 @@
       }
     },
     {
-      "id": "50a28420-7f74-9475-cc6d-560b2b301240",
-      "name": "Sticky 48",
+      "id": "f593582c-6826-c746-3b0a-5c869e568401",
+      "name": "Sticky 49",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
@@ -1377,8 +1394,8 @@
       }
     },
     {
-      "id": "f593582c-6826-c746-3b0a-5c869e568401",
-      "name": "Sticky 49",
+      "id": "0df2f3ef-000b-efd8-cbf3-73aac12b9a51",
+      "name": "Sticky 50",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
@@ -1393,8 +1410,8 @@
       }
     },
     {
-      "id": "0df2f3ef-000b-efd8-cbf3-73aac12b9a51",
-      "name": "Sticky 50",
+      "id": "616c7587-eafd-0b4d-443f-d592fed09dcb",
+      "name": "Sticky 51",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
@@ -1409,8 +1426,8 @@
       }
     },
     {
-      "id": "616c7587-eafd-0b4d-443f-d592fed09dcb",
-      "name": "Sticky 51",
+      "id": "1c02a213-b6bc-960b-e3bd-ed595623b0f2",
+      "name": "Sticky 52",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
@@ -1481,7 +1498,7 @@
       "main": [
         [
           {
-            "node": "Download Audio",
+            "node": "Download Audio: Get File Info",
             "type": "main",
             "index": 0
           }
@@ -1495,7 +1512,25 @@
         ]
       ]
     },
-    "Download Audio": {
+    "Download Audio: Get File Info": {
+      "main": [
+        [
+          {
+            "node": "Download Audio: Read From Disk",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stage: Unduh Gagal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Audio: Read From Disk": {
       "main": [
         [
           {
