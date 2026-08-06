@@ -47,4 +47,8 @@ EXPOSE 8081
 # download/upload standar (20MB/50MB) dihilangkan (jadi sampai 2000MB).
 # --verbosity 2: defaultnya 0 (nyaris tidak ada log) — dinaikkan supaya request
 # masuk & error kelihatan di log container, berguna untuk debugging.
-ENTRYPOINT ["telegram-bot-api", "--local", "--dir=/data/work", "--temp-dir=/data/tmp", "--http-port=8081", "--verbosity=2"]
+#
+# mkdir dijalankan saat start, bukan cuma saat build: bind mount ke /data
+# menutupi folder yang dibuat di image, dan server menolak start kalau working
+# directory-nya belum ada ("Realpath failed for /data/work").
+ENTRYPOINT ["sh", "-c", "mkdir -p /data/work /data/tmp && exec telegram-bot-api --local --dir=/data/work --temp-dir=/data/tmp --http-port=8081 --verbosity=2"]

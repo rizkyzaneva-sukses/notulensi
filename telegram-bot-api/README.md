@@ -34,6 +34,13 @@ Beda dari token bot BotFather. Butuh `api_id` + `api_hash` dari akun Telegram pr
    Mount Path: /data
    ```
    Tanpa mount, isi `/data` hilang tiap restart — termasuk state login bot ke server ini.
+
+   Folder host-nya harus **sudah ada dan bisa ditulis** oleh user di dalam container (Docker Swarm
+   tidak membuatkannya sendiri), jadi siapkan dulu lewat SSH:
+   ```bash
+   mkdir -p /data/notulensi-bot-api
+   chown -R 999:999 /data/notulensi-bot-api   # 999 = uid user `botapi` di image
+   ```
 6. **Resources**: RAM ≥ 2 GB **untuk proses build**-nya (compile TDLib). Setelah jadi, proses
    berjalannya sendiri ringan.
 
