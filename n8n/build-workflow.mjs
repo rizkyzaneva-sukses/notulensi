@@ -322,7 +322,10 @@ add({
   type: 'n8n-nodes-base.telegram',
   typeVersion: 1.2,
   position: [420, 300],
-  parameters: { resource: 'file', operation: 'get', fileId: '={{ $json.file_id }}' },
+  // `download` WAJIB ditulis eksplisit: default node ini true, dan kalau aktif
+  // n8n ikut mencoba mengunduh lewat {baseUrl}/file/bot{token}/{path} — route
+  // yang tidak ada di server self-hosted, jadi selalu 404.
+  parameters: { resource: 'file', operation: 'get', fileId: '={{ $json.file_id }}', download: false },
   credentials: CRED.telegram,
   onError: 'continueErrorOutput',
   retryOnFail: true,

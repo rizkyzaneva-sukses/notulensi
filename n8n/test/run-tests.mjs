@@ -164,6 +164,13 @@ test('tidak ada input node yang menerima lebih dari satu koneksi', () => {
   assert.deepEqual(offenders, []);
 });
 
+test('Get File Info tidak ikut mengunduh sendiri', () => {
+  // Default node Telegram untuk file:get adalah download = true, dan jalur
+  // unduhnya menembak /file/... yang tidak ada di bot-api self-hosted.
+  const node = nodeByName('Download Audio: Get File Info');
+  assert.equal(node.parameters.download, false);
+});
+
 test('URL render service tidak ditulis dengan trailing slash', () => {
   assert.equal(/\/$/.test(CONFIG.render_base_url), false);
   assert.equal(/\/$/.test(CONFIG.llm_base_url), false);

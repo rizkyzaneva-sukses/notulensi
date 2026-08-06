@@ -246,7 +246,8 @@
       "parameters": {
         "resource": "file",
         "operation": "get",
-        "fileId": "={{ $json.file_id }}"
+        "fileId": "={{ $json.file_id }}",
+        "download": false
       },
       "credentials": {
         "telegramApi": {
