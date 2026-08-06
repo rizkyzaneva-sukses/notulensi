@@ -105,6 +105,12 @@
               "type": "number"
             },
             {
+              "id": "cb37decf-2631-8ebe-9dac-3fef8aa53574",
+              "name": "bot_api_files_base_url",
+              "value": "https://tele-files.contoh.com",
+              "type": "string"
+            },
+            {
               "id": "0f3a0335-8032-e710-3c35-cf6f6023b2f4",
               "name": "render_base_url",
               "value": "https://notulensi-render.contoh.com",
@@ -234,7 +240,7 @@
       "type": "n8n-nodes-base.telegram",
       "typeVersion": 1.2,
       "position": [
-        480,
+        420,
         300
       ],
       "parameters": {
@@ -254,22 +260,39 @@
       "waitBetweenTries": 2000
     },
     {
-      "id": "660affc4-f158-7951-7236-78455d9dbd1e",
-      "name": "Download Audio: Read From Disk",
-      "type": "n8n-nodes-base.readWriteFile",
-      "typeVersion": 1,
+      "id": "318307b8-f458-28c8-f77e-d641e472f59d",
+      "name": "Download Audio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
-        560,
+        580,
         300
       ],
       "parameters": {
-        "operation": "read",
-        "fileSelector": "={{ $json.file_path }}",
+        "method": "GET",
+        "url": "={{ $('Config').first().json.bot_api_files_base_url }}{{ $json.result.file_path }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
         "options": {
-          "dataPropertyName": "data"
+          "timeout": 600000,
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          }
         }
       },
-      "onError": "continueErrorOutput"
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_BOT_API_FILES_CREDENTIAL_ID",
+          "name": "Bot API Files"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000
     },
     {
       "id": "0b852973-c3c8-6b8d-4941-67875669f3e6",
@@ -1516,7 +1539,7 @@
       "main": [
         [
           {
-            "node": "Download Audio: Read From Disk",
+            "node": "Download Audio",
             "type": "main",
             "index": 0
           }
@@ -1530,7 +1553,7 @@
         ]
       ]
     },
-    "Download Audio: Read From Disk": {
+    "Download Audio": {
       "main": [
         [
           {

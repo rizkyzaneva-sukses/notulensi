@@ -17,6 +17,8 @@ NotelyVoice → Telegram → n8n → Groq Whisper → LLM (koreksi) → LLM (rin
 | `n8n/` | Sumber workflow (Code node, prompt, kamus istilah) + builder + test |
 | `n8n/voice-to-mindmap.workflow.json` | **File yang di-import ke n8n** (hasil build, jangan diedit manual) |
 | `render-service/` | Micro-service Node.js: render mind map (markmap + Puppeteer) & penyiapan audio (ffmpeg) |
+| `telegram-bot-api/` | **Opsional** — Bot API self-hosted, supaya audio > 20 MB bisa diunduh |
+| `bot-api-files/` | Pasangan wajib `telegram-bot-api/`: menyajikan file hasil unduhannya lewat HTTP |
 | `db/schema.sql` | Skema PostgreSQL untuk logging riwayat (fitur v2, opsional) |
 | `docs/SETUP.md` | Panduan pemasangan langkah demi langkah |
 
@@ -118,6 +120,11 @@ ke repo ini supaya sumber dan hasil tidak berpisah.
 
 ## Batasan yang perlu diketahui
 
+- **Audio > 20 MB tidak bisa diunduh lewat `api.telegram.org`.** Itu batas keras Bot API cloud
+  (≈ 20 menit rekaman m4a). Solusinya menjalankan Bot API sendiri — lihat
+  [`telegram-bot-api/`](telegram-bot-api/) **dan** [`bot-api-files/`](bot-api-files/); keduanya
+  harus jalan berpasangan di satu VPS. Kalau tidak dipakai, kosongkan `bot_api_files_base_url`
+  dan biarkan credential Telegram memakai `https://api.telegram.org`.
 - **Pemotongan audio tanpa overlap.** Audio > ~3,5 jam dipotong dengan `ffmpeg -f segment`, jadi ada
   kemungkinan satu kata terpotong di batas potongan.
 - **Render service jadi dependensi setiap eksekusi**, bukan cuma saat bikin mind map — penyiapan

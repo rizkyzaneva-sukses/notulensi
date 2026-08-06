@@ -77,6 +77,7 @@ const CRED = {
   openai: { httpHeaderAuth: { id: 'REPLACE_OPENAI_CREDENTIAL_ID', name: 'OpenAI Whisper Fallback' } },
   llm: { httpHeaderAuth: { id: 'REPLACE_LLM_CREDENTIAL_ID', name: 'LLM Provider' } },
   render: { httpHeaderAuth: { id: 'REPLACE_RENDER_CREDENTIAL_ID', name: 'Render Service' } },
+  botApiFiles: { httpHeaderAuth: { id: 'REPLACE_BOT_API_FILES_CREDENTIAL_ID', name: 'Bot API Files' } },
 };
 
 const codeNode = (name, position, jsCode) => ({
@@ -266,6 +267,15 @@ add({
         { id: nodeId('cfg-llm-json'), name: 'llm_json_mode', value: true, type: 'boolean' },
         { id: nodeId('cfg-llm-t1'), name: 'llm_temperature_correct', value: 0.1, type: 'number' },
         { id: nodeId('cfg-llm-t2'), name: 'llm_temperature_outline', value: 0.3, type: 'number' },
+        // --- penyaji file bot-api self-hosted (tanpa garis miring di akhir) ---
+        // Kosongkan kalau memakai api.telegram.org biasa — node Download Audio
+        // hanya dipakai kalau bot-api-nya self-hosted.
+        {
+          id: nodeId('cfg-files-url'),
+          name: 'bot_api_files_base_url',
+          value: 'https://tele-files.contoh.com',
+          type: 'string',
+        },
         // --- render service (tanpa trailing slash) ---
         {
           id: nodeId('cfg-render-url'),
@@ -302,16 +312,16 @@ add({
 add(codeNode('Extract Audio', [40, 300], code('extract-audio.js')));
 add(booleanIf('Guard: Ada Audio', [260, 300], '={{ $json.has_audio }}'));
 
-// Server Telegram Bot API self-hosted (mode --local) mengembalikan file_path
-// sebagai path FILESYSTEM ABSOLUT, bukan path relatif yang bisa dipakai untuk
-// download HTTP biasa — endpoint /file/... tidak melayani request di mode ini.
-// Jadi ambil metadata dulu (getFile), lalu baca file-nya langsung dari disk
-// yang di-share (volume sama) antara container bot-api dan container n8n ini.
+// Server Telegram Bot API self-hosted hanya melayani URL berawalan "/bot" —
+// tidak ada route /file/ untuk mengunduh hasilnya (lihat HttpConnection.cpp di
+// tdlib/telegram-bot-api). getFile cuma memberi lokasi file di disk server,
+// dan penyajiannya lewat HTTP ditangani service `bot-api-files` di repo ini.
+// Jadi unduhannya dua langkah: ambil file_path, lalu GET ke penyaji file itu.
 add({
   name: 'Download Audio: Get File Info',
   type: 'n8n-nodes-base.telegram',
   typeVersion: 1.2,
-  position: [480, 300],
+  position: [420, 300],
   parameters: { resource: 'file', operation: 'get', fileId: '={{ $json.file_id }}' },
   credentials: CRED.telegram,
   onError: 'continueErrorOutput',
@@ -321,16 +331,27 @@ add({
 });
 
 add({
-  name: 'Download Audio: Read From Disk',
-  type: 'n8n-nodes-base.readWriteFile',
-  typeVersion: 1,
-  position: [560, 300],
+  name: 'Download Audio',
+  type: 'n8n-nodes-base.httpRequest',
+  typeVersion: 4.2,
+  position: [580, 300],
   parameters: {
-    operation: 'read',
-    fileSelector: '={{ $json.file_path }}',
-    options: { dataPropertyName: 'data' },
+    method: 'GET',
+    // `file_path` sudah berbentuk /data/work/... dan penyaji file memakai root
+    // yang sama, jadi dipakai apa adanya tanpa dipotong.
+    url: "={{ $('Config').first().json.bot_api_files_base_url }}{{ $json.result.file_path }}",
+    authentication: 'genericCredentialType',
+    genericAuthType: 'httpHeaderAuth',
+    options: {
+      timeout: 600000,
+      response: { response: { responseFormat: 'file', outputPropertyName: 'data' } },
+    },
   },
+  credentials: CRED.botApiFiles,
   onError: 'continueErrorOutput',
+  retryOnFail: true,
+  maxTries: 2,
+  waitBetweenTries: 2000,
 });
 
 add({
@@ -679,11 +700,11 @@ connect('Extract Audio', 'Guard: Ada Audio');
 connect('Guard: Ada Audio', 'Download Audio: Get File Info', { output: 0 });
 connect('Guard: Ada Audio', 'Stage: Bukan Audio', { output: 1 });
 
-connect('Download Audio: Get File Info', 'Download Audio: Read From Disk', { output: 0 });
+connect('Download Audio: Get File Info', 'Download Audio', { output: 0 });
 connect('Download Audio: Get File Info', 'Stage: Unduh Gagal', { output: 1 });
 
-connect('Download Audio: Read From Disk', 'Prepare Audio', { output: 0 });
-connect('Download Audio: Read From Disk', 'Stage: Unduh Gagal', { output: 1 });
+connect('Download Audio', 'Prepare Audio', { output: 0 });
+connect('Download Audio', 'Stage: Unduh Gagal', { output: 1 });
 
 connect('Prepare Audio', 'Split Parts', { output: 0 });
 connect('Prepare Audio', 'Stage: Siapkan Audio', { output: 1 });

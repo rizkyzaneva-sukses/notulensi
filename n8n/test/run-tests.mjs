@@ -90,7 +90,7 @@ test('body LLM & render dikirim sebagai raw body', () => {
 test('setiap tahap kritis punya error output yang tersambung', () => {
   const withErrorOutput = [
     'Download Audio: Get File Info',
-    'Download Audio: Read From Disk',
+    'Download Audio',
     'Prepare Audio',
     'Transcribe (Groq)',
     'Transcribe (OpenAI Fallback)',
@@ -167,6 +167,9 @@ test('tidak ada input node yang menerima lebih dari satu koneksi', () => {
 test('URL render service tidak ditulis dengan trailing slash', () => {
   assert.equal(/\/$/.test(CONFIG.render_base_url), false);
   assert.equal(/\/$/.test(CONFIG.llm_base_url), false);
+  // URL disambung langsung dengan file_path yang sudah diawali "/", jadi
+  // garis miring di akhir akan menghasilkan "//data/work/...".
+  assert.equal(/\/$/.test(CONFIG.bot_api_files_base_url), false);
 });
 
 // ------------------------------------------------------------ Extract Audio --

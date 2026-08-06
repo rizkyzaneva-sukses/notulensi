@@ -1,0 +1,25 @@
+server {
+    listen 80;
+    server_name _;
+
+    # Path file memuat token bot sebagai nama folder, jadi jangan pernah
+    # ditulis ke log akses.
+    access_log off;
+
+    # Bind mount diarahkan ke /srv/data supaya URL bisa memakai `file_path`
+    # dari getFile apa adanya (bentuknya /data/work/<bot>/<jenis>/<file>),
+    # tanpa perlu potong-potong prefix di sisi n8n.
+    root /srv;
+
+    location / {
+        # Pola auth-nya sama dengan render service: Authorization: Bearer <token>.
+        # ${FILES_TOKEN} diisi envsubst saat container start; kalau env-nya lupa
+        # diisi, string ini tidak tersubstitusi dan semua request tertolak.
+        if ($http_authorization != "Bearer ${FILES_TOKEN}") {
+            return 401;
+        }
+
+        autoindex off;
+        try_files $uri =404;
+    }
+}

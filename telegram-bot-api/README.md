@@ -27,8 +27,13 @@ Beda dari token bot BotFather. Butuh `api_id` + `api_hash` dari akun Telegram pr
    TELEGRAM_API_HASH=<dari my.telegram.org>
    ```
 4. **Domains**: aktifkan domain + HTTPS, port `8081`.
-5. **Mounts**: tambahkan volume ke `/data` (working directory server, jangan biarkan jadi filesystem
-   container biasa — restart akan menghapus state login bot ke server ini).
+5. **Mounts**: pakai **Bind Mount** (bukan Volume Mount) supaya foldernya bisa dibagi dengan
+   [`bot-api-files/`](../bot-api-files/):
+   ```
+   Host Path:  /data/notulensi-bot-api
+   Mount Path: /data
+   ```
+   Tanpa mount, isi `/data` hilang tiap restart — termasuk state login bot ke server ini.
 6. **Resources**: RAM ≥ 2 GB **untuk proses build**-nya (compile TDLib). Setelah jadi, proses
    berjalannya sendiri ringan.
 
@@ -46,8 +51,10 @@ Di n8n → **Credentials** → credential `Telegram — Notulensi Bot` → field
 `https://api.telegram.org` jadi `https://notulensi-bot-api.domain-kamu.com` → **Save**, pastikan
 "Connection tested successfully" tetap muncul.
 
-Setelah disambungkan, download file besar (>20 MB, sampai 2000 MB) akan otomatis lewat server ini —
-tidak ada perubahan apa pun yang perlu dilakukan di workflow `n8n/voice-to-mindmap.workflow.json`.
+> **Belum selesai sampai di sini.** Server ini **hanya melayani URL berawalan `/bot`** — tidak ada
+> route `/file/...` untuk mengunduh hasilnya, jadi `getFile` cuma memberi lokasi file di disk.
+> Supaya n8n bisa benar-benar mengambil filenya, deploy juga [`bot-api-files/`](../bot-api-files/)
+> di VPS yang sama, berbagi bind mount dengan service ini.
 
 ## Catatan
 
