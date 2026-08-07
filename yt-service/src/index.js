@@ -13,14 +13,18 @@ const app = express();
 const BIND = process.env.BIND_ADDRESS;
 const PORT = parseInt(process.env.PORT || '8080', 10);
 
+// Kode keluar 2 = jangan dicoba ulang oleh pembungkus start-yt-service.cmd.
+// Salah konfigurasi tidak akan membaik dengan diulang.
+const EXIT_FATAL = 2;
+
 if (!BIND) {
   console.error('FATAL: BIND_ADDRESS wajib diisi di .env');
-  process.exit(1);
+  process.exit(EXIT_FATAL);
 }
 
 if (!process.env.SERVICE_TOKEN) {
   console.error('FATAL: SERVICE_TOKEN wajib diisi di .env');
-  process.exit(1);
+  process.exit(EXIT_FATAL);
 }
 
 // ── Middleware ───────────────────────────────────────────────────────
@@ -60,8 +64,40 @@ app.use((err, _req, res, _next) => {
 const workDir = resolve(process.env.WORK_DIR || './work');
 if (!fs.existsSync(workDir)) fs.mkdirSync(workDir, { recursive: true });
 
-app.listen(PORT, BIND, () => {
-  console.log(`[yt-service] listening on ${BIND}:${PORT}`);
-  console.log(`[yt-service] work dir: ${workDir}`);
-  startJanitor(workDir);
-});
+// Saat PC baru menyala, service bisa start sebelum Tailscale sempat memasang
+// alamatnya. listen() ke IP yang belum ada gagal EADDRNOTAVAIL dan prosesnya
+// mati — persis skenario auto-start. Jadi ditunggu dulu, bukan langsung menyerah.
+const BIND_RETRY_MS = parseInt(process.env.BIND_RETRY_MS || '5000', 10);
+const BIND_MAX_WAIT_MS = parseInt(process.env.BIND_MAX_WAIT_MS || '180000', 10);
+const bootAt = Date.now();
+
+function listen() {
+  const server = app.listen(PORT, BIND, () => {
+    console.log(`[yt-service] ${new Date().toISOString()} listening on ${BIND}:${PORT}`);
+    console.log(`[yt-service] work dir: ${workDir}`);
+    startJanitor(workDir);
+  });
+
+  server.on('error', (err) => {
+    // Port sudah dipakai = instance lain hidup. Mengulang hanya akan
+    // menghasilkan loop tanpa akhir, jadi berhenti dengan kode fatal.
+    if (err.code === 'EADDRINUSE') {
+      console.error(`[yt-service] ${BIND}:${PORT} sudah dipakai instance lain`);
+      process.exit(EXIT_FATAL);
+    }
+
+    const waited = Date.now() - bootAt;
+    if (err.code === 'EADDRNOTAVAIL' && waited < BIND_MAX_WAIT_MS) {
+      console.warn(
+        `[yt-service] ${BIND} belum tersedia (Tailscale belum siap?), ulangi dalam ${BIND_RETRY_MS / 1000}s`,
+      );
+      setTimeout(listen, BIND_RETRY_MS);
+      return;
+    }
+
+    console.error(`[yt-service] gagal listen di ${BIND}:${PORT} — ${err.code || err.message}`);
+    process.exit(1);
+  });
+}
+
+listen();
