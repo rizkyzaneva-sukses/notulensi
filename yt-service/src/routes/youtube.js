@@ -3,13 +3,28 @@ const { v4: uuid } = require('uuid');
 const { mkdir, writeFile, readFile, stat } = require('fs/promises');
 const { join, resolve } = require('path');
 
-const { parseVideoId, isPlaylistOnly, getMetadata, downloadAudio } = require('../lib/ytDlp');
+const { parseVideoId, isUnsupportedTarget, getMetadata, downloadAudio } = require('../lib/ytDlp');
 const { transcodeToOpus } = require('../lib/ffmpeg');
+const { rm } = require('fs/promises');
 
 const router = Router();
 const WORK_DIR = resolve(process.env.WORK_DIR || './work');
 const MAX_DURATION = parseInt(process.env.MAX_DURATION_SEC || '14400', 10);
 const BASE_URL = process.env.PUBLIC_BASE_URL || `http://${process.env.BIND_ADDRESS}:${process.env.PORT}`;
+
+// Kegagalan setelah folder kerja dibuat harus ikut membersihkannya. Tanpa ini
+// sisa run yang gagal menumpuk — dan janitor pun melewatinya karena
+// manifest.json belum sempat ditulis.
+async function discard(dirPath) {
+  if (!dirPath) return;
+  try { await rm(dirPath, { recursive: true, force: true }); } catch {}
+}
+
+// Disk penuh punya tindak lanjut yang beda dari "gagal download", jadi
+// dibedakan sejak di sini.
+function isDiskFull(err) {
+  return err?.code === 'ENOSPC' || /ENOSPC|no space left/i.test(err?.message || '');
+}
 
 // ── POST /youtube/prepare ───────────────────────────────────────────
 router.post('/prepare', async (req, res) => {
@@ -22,15 +37,18 @@ router.post('/prepare', async (req, res) => {
 
   const videoId = parseVideoId(url.trim());
   if (!videoId) {
-    // Cek apakah playlist-only
-    if (isPlaylistOnly(url)) {
-      return res.status(400).json({ ok: false, code: 'UNSUPPORTED_URL', message: 'Playlist tidak didukung, kirim video tunggal' });
+    // URL YouTube yang sah tapi bukan satu video — pesannya harus beda.
+    if (isUnsupportedTarget(url)) {
+      return res.status(400).json({ ok: false, code: 'UNSUPPORTED_URL', message: 'Playlist/channel tidak didukung, kirim link satu video' });
     }
     return res.status(400).json({ ok: false, code: 'INVALID_URL', message: 'Bukan URL YouTube yang valid' });
   }
 
   // 2. Bersihkan URL (buang parameter list=)
   const cleanUrl = `https://www.youtube.com/watch?v=${videoId}`;
+
+  // Dideklarasikan di luar try supaya catch terluar juga bisa membersihkannya.
+  let dirPath = null;
 
   try {
     // 3. Ambil metadata
@@ -55,7 +73,10 @@ router.post('/prepare', async (req, res) => {
 
     const duration = meta.duration || 0;
     if (duration === 0) {
-      return res.status(400).json({ ok: false, code: 'TOO_LONG', message: 'Durasi tidak diketahui' });
+      // Bukan "terlalu panjang" — kalau dikirim sebagai TOO_LONG, pesan di
+      // Telegram akan bilang videonya kepanjangan padahal durasinya cuma
+      // tidak terbaca, dan Rizky tidak tahu harus berbuat apa.
+      return res.status(400).json({ ok: false, code: 'DURATION_UNKNOWN', message: 'Durasi video tidak terbaca, kemungkinan premiere atau siaran langsung' });
     }
     if (duration > MAX_DURATION) {
       return res.status(400).json({ ok: false, code: 'TOO_LONG', message: `Video terlalu panjang (${Math.round(duration / 3600)} jam, maks ${MAX_DURATION / 3600} jam)` });
@@ -67,7 +88,7 @@ router.post('/prepare', async (req, res) => {
 
     // 6. Siapkan folder kerja
     const id = uuid();
-    const dirPath = join(WORK_DIR, id);
+    dirPath = join(WORK_DIR, id);
     await mkdir(dirPath, { recursive: true });
 
     const rawPath = join(dirPath, 'raw_audio');
@@ -78,6 +99,10 @@ router.post('/prepare', async (req, res) => {
       await downloadAudio(cleanUrl, rawPath);
     } catch (err) {
       const msg = err.stderr || err.message || '';
+      await discard(dirPath);
+      if (isDiskFull(err)) {
+        return res.status(507).json({ ok: false, code: 'STORAGE_FULL', message: 'Ruang disk di PC habis' });
+      }
       if (msg.includes('Sign in') || msg.includes('bot')) {
         return res.status(502).json({ ok: false, code: 'BOT_CHECK', message: 'YouTube meminta verifikasi bot saat download. Coba gunakan cookies.' });
       }
@@ -102,6 +127,7 @@ router.post('/prepare', async (req, res) => {
     }
 
     if (!rawStat || rawStat.size === 0) {
+      await discard(dirPath);
       return res.status(502).json({ ok: false, code: 'DOWNLOAD_FAILED', message: 'File audio kosong setelah download' });
     }
 
@@ -109,12 +135,17 @@ router.post('/prepare', async (req, res) => {
     try {
       await transcodeToOpus(rawPath, oggPath);
     } catch (err) {
+      await discard(dirPath);
+      if (isDiskFull(err)) {
+        return res.status(507).json({ ok: false, code: 'STORAGE_FULL', message: 'Ruang disk di PC habis' });
+      }
       return res.status(500).json({ ok: false, code: 'TRANSCODE_FAILED', message: `Gagal mengkonversi audio: ${(err.message || '').slice(0, 200)}` });
     }
 
     // 10. Cek hasil transcode
     const oggStat = await stat(oggPath);
     if (oggStat.size === 0) {
+      await discard(dirPath);
       return res.status(500).json({ ok: false, code: 'TRANSCODE_FAILED', message: 'File hasil konversi kosong' });
     }
 
@@ -148,6 +179,10 @@ router.post('/prepare', async (req, res) => {
 
   } catch (err) {
     console.error('[prepare] unexpected error:', err);
+    await discard(dirPath);
+    if (isDiskFull(err)) {
+      return res.status(507).json({ ok: false, code: 'STORAGE_FULL', message: 'Ruang disk di PC habis' });
+    }
     return res.status(500).json({ ok: false, code: 'INTERNAL_ERROR', message: 'Kesalahan tak terduga' });
   }
 });

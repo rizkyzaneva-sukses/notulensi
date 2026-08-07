@@ -8,16 +8,70 @@ const TIMEOUT = parseInt(process.env.DOWNLOAD_TIMEOUT_MS || '900000', 10);
 const COOKIES = process.env.COOKIES_FILE || '';
 
 // ── URL validation ──────────────────────────────────────────────────
-const YT_REGEX = /^(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/;
+// Diurai lewat URL API, bukan satu regex besar. Regex sebelumnya mensyaratkan
+// "v=" persis setelah "?", jadi link sah seperti youtube.com/watch?app=desktop&v=ID
+// ditolak sebagai URL tidak valid — dan itu bentuk yang sering keluar dari
+// tombol share ponsel.
+const YT_HOSTS = new Set([
+  'youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com',
+  'youtu.be', 'www.youtu.be',
+]);
+const VIDEO_ID = /^[a-zA-Z0-9_-]{11}$/;
+// Jalur yang menaruh id video di segmen kedua, bukan di query.
+const PATH_PREFIXES = new Set(['shorts', 'live', 'embed', 'v']);
 
-function parseVideoId(url) {
-  const m = url.match(YT_REGEX);
-  return m ? m[1] : null;
+function toUrl(input) {
+  const raw = String(input || '').trim();
+  if (!raw) return null;
+  try {
+    return new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+  } catch {
+    return null;
+  }
 }
 
-function isPlaylistOnly(url) {
-  // playlist without video (list=PL... & no v=)
-  return /[?&]list=PL/i.test(url) && !/[?&]v=/i.test(url);
+function parseVideoId(input) {
+  const u = toUrl(input);
+  if (!u || !YT_HOSTS.has(u.hostname.toLowerCase())) return null;
+
+  const segments = u.pathname.split('/').filter(Boolean);
+
+  // youtu.be/<id>
+  if (u.hostname.toLowerCase().endsWith('youtu.be')) {
+    return VIDEO_ID.test(segments[0] || '') ? segments[0] : null;
+  }
+
+  // youtube.com/watch?...&v=<id> — posisi parameter tidak lagi penting
+  const v = u.searchParams.get('v');
+  if (v && VIDEO_ID.test(v)) return v;
+
+  // youtube.com/{shorts,live,embed,v}/<id>
+  if (segments.length >= 2 && PATH_PREFIXES.has(segments[0].toLowerCase())) {
+    return VIDEO_ID.test(segments[1]) ? segments[1] : null;
+  }
+
+  return null;
+}
+
+/**
+ * URL YouTube yang sah tapi bukan satu video: playlist, channel, handle.
+ * Dipakai untuk membedakan "tidak didukung" dari "bukan URL YouTube", supaya
+ * pesan yang sampai ke Telegram menjelaskan apa yang harus dilakukan.
+ */
+function isUnsupportedTarget(input) {
+  const u = toUrl(input);
+  if (!u || !YT_HOSTS.has(u.hostname.toLowerCase())) return false;
+
+  const segments = u.pathname.split('/').filter(Boolean);
+  const first = (segments[0] || '').toLowerCase();
+
+  // Playlist apa pun awalannya (PL, RD, UU, LL, OL, …), bukan cuma PL.
+  if (u.searchParams.has('list') && !u.searchParams.has('v')) return true;
+  if (first === 'playlist') return true;
+  if (first.startsWith('@')) return true;
+  if (['channel', 'c', 'user', 'results', 'feed'].includes(first)) return true;
+
+  return false;
 }
 
 // ── Metadata fetch ──────────────────────────────────────────────────
@@ -41,6 +95,9 @@ async function downloadAudio(url, outPath) {
     '-f', 'bestaudio',
     '--no-playlist',
     '--no-warnings',
+    // Progress ditulis terus-menerus ke stdout. Dengan maxBuffer default 1 MB,
+    // unduhan panjang bisa mati sendiri karena ENOBUFS — bukan karena YouTube.
+    '--no-progress',
     '-o', outPath,
   ];
   if (COOKIES) args.push('--cookies', COOKIES);
@@ -48,6 +105,7 @@ async function downloadAudio(url, outPath) {
 
   await execFileP(YTDLP, args, {
     timeout: TIMEOUT,
+    maxBuffer: 10 * 1024 * 1024,
     windowsHide: true,
   });
 }
@@ -65,4 +123,4 @@ async function getVersion() {
   }
 }
 
-module.exports = { parseVideoId, isPlaylistOnly, getMetadata, downloadAudio, getVersion };
+module.exports = { parseVideoId, isUnsupportedTarget, getMetadata, downloadAudio, getVersion };

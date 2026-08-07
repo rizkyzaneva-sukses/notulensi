@@ -17,16 +17,24 @@ async function cleanOnce(workDir) {
       const manifestPath = join(dirPath, 'manifest.json');
 
       try {
-        const data = JSON.parse(await readFile(manifestPath, 'utf-8'));
-        const age = Date.now() - data.createdAt;
+        let age;
+        try {
+          const data = JSON.parse(await readFile(manifestPath, 'utf-8'));
+          age = Date.now() - data.createdAt;
+        } catch {
+          // Tanpa manifest — justru inilah sisa run yang gagal. Kalau dilewati,
+          // folder seperti ini menumpuk selamanya. Umurnya diambil dari mtime.
+          const info = await stat(dirPath);
+          age = Date.now() - info.mtimeMs;
+        }
 
         if (age > TTL) {
           await rm(dirPath, { recursive: true, force: true });
           cleaned++;
           console.log(`[janitor] cleaned: ${entry.name} (age: ${Math.round(age / 60000)}m)`);
         }
-      } catch {
-        // no manifest or unreadable — skip
+      } catch (err) {
+        console.error(`[janitor] lewati ${entry.name}: ${err.message}`);
       }
     }
   } catch (err) {

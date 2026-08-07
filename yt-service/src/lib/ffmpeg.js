@@ -7,6 +7,11 @@ const execFileP = promisify(execFile);
 const FFMPEG = process.env.FFMPEG_PATH || 'ffmpeg';
 const FFPROBE = process.env.FFPROBE_PATH || 'ffprobe';
 
+// Harus sejalan dengan MAX_DURATION_SEC. Batas durasi 4 jam dengan timeout
+// 2 menit berarti video panjang selalu gagal padahal ffmpeg baik-baik saja —
+// encoding audio 4 jam butuh beberapa menit, bukan detik.
+const TRANSCODE_TIMEOUT = parseInt(process.env.TRANSCODE_TIMEOUT_MS || '900000', 10);
+
 // ── Transcode to Opus 16kHz mono ────────────────────────────────────
 // Identik dengan transcodeToOpus() di render-service/src/audio.js
 async function transcodeToOpus(inputPath, outputPath) {
@@ -28,7 +33,7 @@ async function transcodeToOpus(inputPath, outputPath) {
   ];
 
   await execFileP(FFMPEG, args, {
-    timeout: 120000,
+    timeout: TRANSCODE_TIMEOUT,
     windowsHide: true,
   });
 

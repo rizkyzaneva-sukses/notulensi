@@ -93,6 +93,7 @@ Semua kegagalan membalas bentuk yang sama: `{ "ok": false, "code": "...", "messa
 | `UNSUPPORTED_URL` | 400 | Playlist / channel, bukan video tunggal |
 | `LIVE_NOT_SUPPORTED` | 400 | Sedang siaran langsung |
 | `TOO_LONG` | 400 | Melewati batas durasi |
+| `DURATION_UNKNOWN` | 400 | Durasi tidak terbaca (premiere/siaran) — bukan "terlalu panjang" |
 | `VIDEO_UNAVAILABLE` | 404 | Privat, dihapus, atau dibatasi wilayah |
 | `BOT_CHECK` | 502 | YouTube meminta verifikasi bot |
 | `DOWNLOAD_FAILED` | 502 | yt-dlp gagal karena sebab lain |
