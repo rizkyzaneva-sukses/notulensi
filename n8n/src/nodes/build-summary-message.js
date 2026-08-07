@@ -53,8 +53,23 @@ if (!durationSec && prepared?.durationSec) durationSec = Number(prepared.duratio
 
 const metaParts = [formatDuration(durationSec), formatDate(data.sent_at)].filter(Boolean);
 
-const lines = [`🗒 <b>${escapeHtml(data.title ?? 'Catatan Suara')}</b>`];
+const fromYoutube = data.source === 'youtube';
+
+const lines = [
+  `${fromYoutube ? '🎬' : '🗒'} <b>${escapeHtml(data.title ?? (fromYoutube ? 'Ringkasan Video' : 'Catatan Suara'))}</b>`,
+];
 if (metaParts.length) lines.push(`<i>${escapeHtml(metaParts.join(' · '))}</i>`);
+
+// Judul di atas berasal dari LLM, jadi untuk sumber YouTube ditambahkan asal
+// videonya — supaya jelas ringkasan ini dari video yang mana.
+if (fromYoutube && (data.video_title || data.video_url)) {
+  const asal = [data.video_title, data.video_channel].filter(Boolean).join(' — ');
+  if (asal) lines.push(`<i>Sumber: ${escapeHtml(asal)}</i>`);
+  // URL polos, bukan tag <a>: Telegram tetap menjadikannya tautan, dan tidak
+  // ada tanda kurung sudut tambahan yang bisa merusak parse_mode HTML.
+  if (data.video_url) lines.push(escapeHtml(data.video_url));
+}
+
 lines.push('', escapeHtml(data.summary ?? '').trim());
 
 const outline = Array.isArray(data.outline) ? data.outline : [];
@@ -82,8 +97,8 @@ if (text.length > TELEGRAM_LIMIT) {
 return [
   {
     json: {
-      chat_id: data.chat_id ?? $('Extract Audio').first().json.chat_id,
-      thread_id: data.thread_id ?? $('Extract Audio').first().json.thread_id,
+      chat_id: data.chat_id ?? $('Extract Input').first().json.chat_id,
+      thread_id: data.thread_id ?? $('Extract Input').first().json.thread_id,
       title: data.title ?? 'Catatan Suara',
       summary_text: text,
     },

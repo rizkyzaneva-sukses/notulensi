@@ -27,7 +27,11 @@ const whisperPrompt = `Transkrip rapat bisnis Bahasa Indonesia. Ejaan yang benar
   480,
 );
 
-const prompt = (name) => read('src', 'prompts', `${name}.md`).replace('{{GLOSSARY}}', glossaryBlock).trim();
+// Template dikirim ke Code node dengan {{KONTEKS}} & {{KAMUS}} masih utuh —
+// keduanya diisi saat jalan, karena isinya bergantung pada sumber transkrip.
+// Kamus brand Rizky hanya benar untuk rekamannya sendiri; menyuntikkannya ke
+// transkrip video orang lain justru merusak kata yang sudah benar.
+const prompt = (name) => read('src', 'prompts', `${name}.md`).trim();
 
 const CORRECT_TERMS_PROMPT = prompt('correct-terms');
 const GENERATE_OUTLINE_PROMPT = prompt('generate-outline');
@@ -78,6 +82,7 @@ const CRED = {
   llm: { httpHeaderAuth: { id: 'REPLACE_LLM_CREDENTIAL_ID', name: 'LLM Provider' } },
   render: { httpHeaderAuth: { id: 'REPLACE_RENDER_CREDENTIAL_ID', name: 'Render Service' } },
   botApiFiles: { httpHeaderAuth: { id: 'REPLACE_BOT_API_FILES_CREDENTIAL_ID', name: 'Bot API Files' } },
+  ytService: { httpHeaderAuth: { id: 'REPLACE_YT_SERVICE_CREDENTIAL_ID', name: 'YouTube Service' } },
 };
 
 const codeNode = (name, position, jsCode) => ({
@@ -108,6 +113,38 @@ const booleanIf = (name, position, expression) => ({
     },
     looseTypeValidation: true,
     options: {},
+  },
+});
+
+// Percabangan lebih dari dua arah. IF cuma punya ya/tidak, sementara masukan
+// sekarang ada tiga kemungkinan: audio, link YouTube, atau bukan keduanya.
+const switchNode = (name, position, rules) => ({
+  name,
+  type: 'n8n-nodes-base.switch',
+  typeVersion: 3.2,
+  position,
+  parameters: {
+    rules: {
+      values: rules.map(([outputKey, expression]) => ({
+        conditions: {
+          options: { caseSensitive: true, leftValue: '', typeValidation: 'loose', version: 2 },
+          conditions: [
+            {
+              id: nodeId(`${name}-${outputKey}`),
+              leftValue: expression,
+              rightValue: '',
+              operator: { type: 'boolean', operation: 'true', singleValue: true },
+            },
+          ],
+          combinator: 'and',
+        },
+        renameOutput: true,
+        outputKey,
+      })),
+    },
+    looseTypeValidation: true,
+    // Output tambahan di indeks terakhir untuk masukan yang tidak cocok apa pun.
+    options: { fallbackOutput: 'extra' },
   },
 });
 
@@ -188,7 +225,7 @@ const transcribeNode = (name, position, { urlField, modelField, credentials }) =
 const rawJsonPost = (
   name,
   position,
-  { url, credentials, timeout = 180000, responseFile = false, batchInterval = 0 },
+  { url, credentials, timeout = 180000, responseFile = false, batchInterval = 0, fullResponse = false },
 ) => ({
   name,
   type: 'n8n-nodes-base.httpRequest',
@@ -213,6 +250,11 @@ const rawJsonPost = (
       ...(responseFile
         ? { response: { response: { responseFormat: 'file', outputPropertyName: 'data' } } }
         : {}),
+      // neverError menahan n8n supaya tidak melempar pada status 4xx/5xx, dan
+      // fullResponse menyertakan statusCode — dua-duanya perlu supaya kode
+      // error dari service sampai utuh ke Code node, bukan tenggelam jadi
+      // pesan generik "Request failed".
+      ...(fullResponse ? { response: { response: { fullResponse: true, neverError: true } } } : {}),
     },
   },
   credentials,
@@ -293,6 +335,15 @@ add({
           value: 'https://tele-files.contoh.com',
           type: 'string',
         },
+        // --- yt-service di PC Rizky (tanpa trailing slash) ---
+        // Alamat Tailscale, bukan alamat publik — service ini tidak terekspos
+        // ke internet dan hanya hidup selama PC menyala.
+        {
+          id: nodeId('cfg-yt-url'),
+          name: 'yt_service_base_url',
+          value: 'http://100.x.y.z:8080',
+          type: 'string',
+        },
         // --- render service (tanpa trailing slash) ---
         {
           id: nodeId('cfg-render-url'),
@@ -326,8 +377,17 @@ add({
   parameters: {},
 });
 
-add(codeNode('Extract Audio', [40, 300], code('extract-audio.js')));
-add(booleanIf('Guard: Ada Audio', [260, 300], '={{ $json.has_audio }}'));
+add(codeNode('Extract Input', [40, 300], code('extract-input.js')));
+
+// Tiga kemungkinan masukan, jadi Switch — bukan IF yang cuma ya/tidak.
+// Karena Switch menjamin hanya satu cabang berisi data, node hilir boleh
+// menerima koneksi dari beberapa cabang tanpa ikut berjalan dua kali.
+add(
+  switchNode('Router: Jenis Input', [260, 300], [
+    ['audio', '={{ $json.has_audio }}'],
+    ['youtube', '={{ $json.has_youtube }}'],
+  ]),
+);
 
 // Server Telegram Bot API self-hosted hanya melayani URL berawalan "/bot" —
 // tidak ada route /file/ untuk mengunduh hasilnya (lihat HttpConnection.cpp di
@@ -393,6 +453,63 @@ add({
   },
   credentials: CRED.render,
   onError: 'continueErrorOutput',
+});
+
+// ----------------------------------------------------------- cabang YouTube --
+// Tugas cabang ini sempit: ubah link jadi file audio. Begitu .ogg dari PC ada
+// di tangan, ia masuk ke node Prepare Audio yang sama dengan voice note — dan
+// seluruh alur setelah itu tidak tahu (dan tidak perlu tahu) sumbernya apa.
+
+add(codeNode('Build YouTube Request', [420, 760], code('build-youtube-request.js')));
+
+add({
+  ...rawJsonPost('YouTube: Prepare', [640, 760], {
+    url: '={{ $json.yt_url }}',
+    credentials: CRED.ytService,
+    // Unduh + kompres video panjang di PC bisa makan belasan menit.
+    timeout: 1800000,
+    fullResponse: true,
+  }),
+  // Sukses, error berkode dari service, dan PC mati — semuanya dibiarkan lewat
+  // sebagai item biasa supaya keputusannya diambil di satu tempat saja.
+  onError: 'continueRegularOutput',
+});
+
+add(codeNode('Parse YouTube Prepare', [860, 760], code('parse-youtube-prepare.js')));
+add(booleanIf('Guard: YouTube Siap', [1080, 760], '={{ $json.yt_ok }}'));
+
+add(codeNode('Build YouTube Ack', [1300, 660], code('build-youtube-ack.js')));
+
+add(
+  telegramSendMessage('Telegram: Kirim Info Video', [1520, 660], {
+    chatId: '={{ $json.chat_id }}',
+    text: '={{ $json.ack_text }}',
+    messageThreadId: '={{ $json.thread_id }}',
+  }),
+);
+
+add({
+  name: 'YouTube: Download Audio',
+  type: 'n8n-nodes-base.httpRequest',
+  typeVersion: 4.2,
+  position: [1740, 660],
+  parameters: {
+    method: 'GET',
+    // Node Telegram di depannya mengembalikan balasan API-nya sendiri, jadi
+    // URL-nya diambil dari node yang benar-benar memilikinya.
+    url: "={{ $('Parse YouTube Prepare').first().json.audio_url }}",
+    authentication: 'genericCredentialType',
+    genericAuthType: 'httpHeaderAuth',
+    options: {
+      timeout: 600000,
+      response: { response: { responseFormat: 'file', outputPropertyName: 'data' } },
+    },
+  },
+  credentials: CRED.ytService,
+  onError: 'continueErrorOutput',
+  retryOnFail: true,
+  maxTries: 2,
+  waitBetweenTries: 2000,
 });
 
 add({
@@ -466,7 +583,10 @@ add(
   codeNode(
     'Build Correction Request',
     [2460, 300],
-    code('build-correction-request.js', { __INJECT_CORRECT_TERMS_PROMPT__: CORRECT_TERMS_PROMPT }),
+    code('build-correction-request.js', {
+      __INJECT_CORRECT_TERMS_PROMPT__: CORRECT_TERMS_PROMPT,
+      __INJECT_GLOSSARY_BLOCK__: glossaryBlock,
+    }),
   ),
 );
 
@@ -493,6 +613,7 @@ add(
     [3120, 300],
     code('build-outline-request.js', {
       __INJECT_GENERATE_OUTLINE_PROMPT__: GENERATE_OUTLINE_PROMPT,
+      __INJECT_GLOSSARY_BLOCK__: glossaryBlock,
       __INJECT_RETRY_MODE__: false,
     }),
   ),
@@ -522,6 +643,7 @@ add(
     [3780, 560],
     code('build-outline-request.js', {
       __INJECT_GENERATE_OUTLINE_PROMPT__: GENERATE_OUTLINE_PROMPT,
+      __INJECT_GLOSSARY_BLOCK__: glossaryBlock,
       __INJECT_RETRY_MODE__: true,
     }),
   ),
@@ -565,13 +687,13 @@ add({
   parameters: {
     resource: 'message',
     operation: 'sendPhoto',
-    chatId: "={{ $('Extract Audio').first().json.chat_id }}",
+    chatId: "={{ $('Extract Input').first().json.chat_id }}",
     binaryData: true,
     binaryPropertyName: 'data',
     additionalFields: {
       caption: "={{ '🧠 ' + $('Outline to Markdown').first().json.title }}",
       appendAttribution: false,
-      message_thread_id: "={{ $('Extract Audio').first().json.thread_id }}",
+      message_thread_id: "={{ $('Extract Input').first().json.thread_id }}",
     },
   },
   credentials: CRED.telegram,
@@ -643,8 +765,10 @@ add(
 // ------------------------------------------------------------- jalur error --
 
 const stages = [
-  ['Stage: Bukan Audio', [260, 1120], 'Bukan pesan suara', 'Kirim voice note atau file audio ya — pesan lain tidak diproses.'],
-  ['Stage: Unduh Gagal', [480, 1120], 'Gagal mengunduh audio', 'File-nya tidak bisa diambil dari Telegram. Coba kirim ulang.'],
+  ['Stage: Bukan Audio', [260, 1120], 'Belum bisa diproses', 'Kirim voice note, file audio, atau link video YouTube ya — pesan lain tidak diproses.'],
+  // Dipakai jalur Telegram maupun jalur YouTube, jadi kalimatnya tidak menyebut
+  // sumber tertentu.
+  ['Stage: Unduh Gagal', [480, 1120], 'Gagal mengunduh audio', 'File audionya tidak bisa diambil. Coba kirim ulang.'],
   ['Stage: Siapkan Audio', [700, 1120], 'Gagal menyiapkan audio', 'Render service tidak merespons saat memproses audio. Coba lagi sebentar.'],
   ['Stage: Transkripsi', [1360, 1120], 'Transkripsi gagal', 'Groq dan provider cadangan sama-sama gagal. Coba kirim ulang rekamannya.'],
   ['Stage: Transkrip Kosong', [2240, 1120], 'Tidak ada suara terdeteksi', 'Rekamannya hening atau cuma noise, jadi tidak ada yang bisa diringkas.'],
@@ -675,7 +799,14 @@ const stickies = [
     620,
     200,
     4,
-    '## 1. Masuk & filter\nTrigger Telegram → node **Config** (semua setelan ada di sini) → whitelist `chat_id`.\n\nGanti provider LLM = ubah `llm_base_url`, `llm_model`, `llm_json_mode` di node Config, plus credential **LLM Provider**.',
+    '## 1. Masuk & filter\nTrigger Telegram → node **Config** (semua setelan ada di sini) → whitelist `chat_id` → **Router: Jenis Input** memilah audio / link YouTube / bukan keduanya.\n\nGanti provider LLM = ubah `llm_base_url`, `llm_model`, `llm_json_mode` di node Config, plus credential **LLM Provider**.',
+  ],
+  [
+    [400, 560],
+    1560,
+    180,
+    7,
+    '## 1b. Cabang YouTube\nLink dikirim ke **yt-service** di PC Rizky (`yt_service_base_url`, lewat Tailscale) — bukan di VPS, karena YouTube memblokir IP datacenter. Balasannya audio Opus 16 kHz mono yang masuk ke **Prepare Audio** yang sama dengan voice note, jadi seluruh alur di bawah tidak berubah.\n\nFitur ini hanya hidup selama PC menyala. Kalau PC mati, pesan errornya menyebut itu secara spesifik.',
   ],
   [
     [660, 60],
@@ -721,12 +852,26 @@ for (const [position, width, height, color, content] of stickies) {
 
 connect('Telegram Trigger', 'Config');
 connect('Config', 'Guard: Chat Diizinkan');
-connect('Guard: Chat Diizinkan', 'Extract Audio', { output: 0 });
+connect('Guard: Chat Diizinkan', 'Extract Input', { output: 0 });
 connect('Guard: Chat Diizinkan', 'Abaikan', { output: 1 });
 
-connect('Extract Audio', 'Guard: Ada Audio');
-connect('Guard: Ada Audio', 'Download Audio: Get File Info', { output: 0 });
-connect('Guard: Ada Audio', 'Stage: Bukan Audio', { output: 1 });
+connect('Extract Input', 'Router: Jenis Input');
+connect('Router: Jenis Input', 'Download Audio: Get File Info', { output: 0 });
+connect('Router: Jenis Input', 'Build YouTube Request', { output: 1 });
+// Output ketiga adalah fallback Switch: bukan audio, bukan link YouTube.
+connect('Router: Jenis Input', 'Stage: Bukan Audio', { output: 2 });
+
+connect('Build YouTube Request', 'YouTube: Prepare');
+connect('YouTube: Prepare', 'Parse YouTube Prepare');
+connect('Parse YouTube Prepare', 'Guard: YouTube Siap');
+connect('Guard: YouTube Siap', 'Build YouTube Ack', { output: 0 });
+// Pesan errornya sudah dirakit di Parse YouTube Prepare, jadi langsung saja.
+connect('Guard: YouTube Siap', 'Build Error Message', { output: 1 });
+
+connect('Build YouTube Ack', 'Telegram: Kirim Info Video');
+connect('Telegram: Kirim Info Video', 'YouTube: Download Audio');
+connect('YouTube: Download Audio', 'Prepare Audio', { output: 0 });
+connect('YouTube: Download Audio', 'Stage: Unduh Gagal', { output: 1 });
 
 connect('Download Audio: Get File Info', 'Download Audio', { output: 0 });
 connect('Download Audio: Get File Info', 'Stage: Unduh Gagal', { output: 1 });

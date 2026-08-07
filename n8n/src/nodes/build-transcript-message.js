@@ -5,8 +5,8 @@ const data = $('Parse Correction').first().json;
 
 const transcript = String(data.transcript_corrected ?? data.transcript_raw ?? '').trim();
 const limit = Number(config.max_transcript_inline ?? 3000);
-const chatId = data.chat_id ?? $('Extract Audio').first().json.chat_id;
-const threadId = data.thread_id ?? $('Extract Audio').first().json.thread_id;
+const chatId = data.chat_id ?? $('Extract Input').first().json.chat_id;
+const threadId = data.thread_id ?? $('Extract Input').first().json.thread_id;
 
 function escapeHtml(value) {
   return String(value ?? '')

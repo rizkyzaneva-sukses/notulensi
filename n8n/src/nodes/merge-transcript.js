@@ -30,7 +30,23 @@ const transcriptRaw = rows
   .join('\n\n')
   .trim();
 
-const meta = $('Extract Audio').first().json;
+const meta = $('Extract Input').first().json;
+
+function pick(nodeName) {
+  try {
+    return $(nodeName).first().json ?? null;
+  } catch (error) {
+    // Node itu tidak berjalan di eksekusi ini (mis. sumbernya voice note).
+    return null;
+  }
+}
+
+const video = pick('Parse YouTube Prepare');
+// Durasi dari ffprobe adalah yang paling bisa dipercaya, dan tersedia untuk
+// kedua sumber. Metadata Telegram/YouTube dipakai kalau ffprobe tidak terbaca.
+const prepared = pick('Prepare Audio');
+const durationSec =
+  Number(prepared?.durationSec ?? 0) || Number(video?.duration_sec ?? 0) || Number(meta.duration_sec ?? 0);
 
 return [
   {
@@ -40,7 +56,11 @@ return [
       message_id: meta.message_id,
       sent_at: meta.sent_at,
       caption: meta.caption,
-      duration_sec: meta.duration_sec,
+      source: meta.source ?? 'voice',
+      video_title: video?.video_title ?? '',
+      video_channel: video?.video_channel ?? '',
+      video_url: meta.youtube_url ?? '',
+      duration_sec: durationSec,
       part_count: rows.length,
       transcript_raw: transcriptRaw,
       has_transcript: transcriptRaw.length > 0,

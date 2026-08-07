@@ -80,6 +80,11 @@ return [
       message_id: previous.message_id,
       sent_at: previous.sent_at,
       caption: previous.caption,
+      // Ikut mengalir karena prompt ringkasan juga bergantung pada sumbernya.
+      source: previous.source,
+      video_title: previous.video_title,
+      video_channel: previous.video_channel,
+      video_url: previous.video_url,
       duration_sec: previous.duration_sec,
       part_count: previous.part_count,
       transcript_raw: previous.transcript_raw,

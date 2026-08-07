@@ -32,8 +32,8 @@ let chatId = item.chat_id ?? '';
 let threadId = item.thread_id;
 if (!chatId) {
   try {
-    chatId = $('Extract Audio').first().json.chat_id;
-    threadId = $('Extract Audio').first().json.thread_id;
+    chatId = $('Extract Input').first().json.chat_id;
+    threadId = $('Extract Input').first().json.thread_id;
   } catch (error) {
     chatId = '';
   }

@@ -10,11 +10,40 @@
 //
 // Transkrip adalah input bebas, jadi body-nya dirakit sebagai objek lalu
 // di-JSON.stringify() di sini dan dikirim sebagai Raw body oleh HTTP Request node.
-const SYSTEM_PROMPT = __INJECT_CORRECT_TERMS_PROMPT__;
+const PROMPT_TEMPLATE = __INJECT_CORRECT_TERMS_PROMPT__;
+const GLOSSARY_BLOCK = __INJECT_GLOSSARY_BLOCK__;
 
 const config = $('Config').first().json;
 const source = $input.first().json;
 const transcript = String(source.transcript_raw ?? '').trim();
+
+// Kamus istilah bisnis hanya masuk akal untuk rekaman Rizky sendiri. Untuk
+// video orang lain, menyuntikkan "Zaneva/ROAS/HPP" justru membuat model
+// "mengoreksi" kata yang sebenarnya sudah benar menjadi nama brand — kerusakan
+// yang tidak akan terlihat karena hasilnya tetap terbaca wajar.
+const isBisnis = source.source !== 'youtube';
+
+// Judul video adalah teks dari orang lain yang masuk ke system prompt. Sudah
+// dibersihkan di yt-service, dibersihkan lagi di sini sebagai lapis kedua.
+const videoTitle = String(source.video_title ?? '')
+  .replace(/[\r\n]+/g, ' ')
+  .trim()
+  .slice(0, 150);
+
+const SYSTEM_PROMPT = PROMPT_TEMPLATE
+  .replace(
+    '{{KONTEKS}}',
+    isBisnis
+      ? 'Sumbernya rekaman rapat/brainstorm bisnis.'
+      : `Sumbernya transkrip otomatis video YouTube${videoTitle ? ` berjudul "${videoTitle}"` : ''}. Topiknya bisa apa saja.`,
+  )
+  // Blok kamus dihilangkan sepenuhnya untuk sumber non-bisnis — bukan diisi
+  // "tidak ada kamus", karena menyebut kamus kosong hanya membingungkan model.
+  .replace(
+    '{{KAMUS}}',
+    isBisnis ? `\nKAMUS EJAAN (ini ejaan yang benar — pakai persis seperti ini):\n${GLOSSARY_BLOCK}` : '',
+  )
+  .trim();
 
 // Batas karakter per potongan. 0 / kosong = jangan potong sama sekali.
 const chunkChars = Math.max(0, Number(config.correction_chunk_chars ?? 9000) || 0);

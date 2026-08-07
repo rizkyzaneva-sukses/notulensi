@@ -123,6 +123,12 @@
               "type": "string"
             },
             {
+              "id": "6322296c-e526-82b1-6fb2-8fbbbcf59c37",
+              "name": "yt_service_base_url",
+              "value": "http://100.x.y.z:8080",
+              "type": "string"
+            },
+            {
               "id": "0f3a0335-8032-e710-3c35-cf6f6023b2f4",
               "name": "render_base_url",
               "value": "https://notulensi-render.contoh.com",
@@ -198,8 +204,8 @@
       "parameters": {}
     },
     {
-      "id": "8f5190af-0934-316f-8491-4a59c847317f",
-      "name": "Extract Audio",
+      "id": "3ea4ab58-41ca-6d58-1c08-97f338dcc721",
+      "name": "Extract Input",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
@@ -208,42 +214,77 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// Ambil metadata audio dari update Telegram (voice note, file audio, video note,\r\n// atau document ber-mime audio/video) dan normalkan jadi satu bentuk.\r\nconst update = $input.first().json;\r\nconst message = update.message ?? update.channel_post ?? update;\r\n\r\nconst candidates = [\r\n  ['voice', message.voice],\r\n  ['audio', message.audio],\r\n  ['video_note', message.video_note],\r\n];\r\n\r\nlet kind = null;\r\nlet media = null;\r\nfor (const [name, value] of candidates) {\r\n  if (value && value.file_id) {\r\n    kind = name;\r\n    media = value;\r\n    break;\r\n  }\r\n}\r\n\r\nif (!media && message.document?.file_id) {\r\n  const mime = String(message.document.mime_type ?? '');\r\n  if (/^(audio|video)\\//.test(mime)) {\r\n    kind = 'document';\r\n    media = message.document;\r\n  }\r\n}\r\n\r\nconst chatId = String(message.chat?.id ?? '');\r\n// Hadir hanya kalau pesan dikirim di dalam topic grup forum; dipakai supaya\r\n// balasan bot ikut masuk ke topic yang sama, bukan ke topic General.\r\nconst threadId = message.message_thread_id ?? undefined;\r\nconst sentAt = message.date ? new Date(message.date * 1000).toISOString() : new Date().toISOString();\r\n\r\nreturn [\r\n  {\r\n    json: {\r\n      has_audio: Boolean(media),\r\n      kind,\r\n      chat_id: chatId,\r\n      thread_id: threadId,\r\n      message_id: message.message_id ?? null,\r\n      from: message.from?.first_name ?? '',\r\n      caption: String(message.caption ?? '').trim(),\r\n      sent_at: sentAt,\r\n      file_id: media?.file_id ?? '',\r\n      file_name: media?.file_name ?? '',\r\n      mime_type: media?.mime_type ?? '',\r\n      file_size: Number(media?.file_size ?? 0),\r\n      duration_sec: Number(media?.duration ?? 0),\r\n    },\r\n  },\r\n];\r\n"
+        "jsCode": "// Kenali jenis masukan dari update Telegram dan normalkan jadi satu bentuk.\n//\n// Dua sumber yang didukung:\n//   - audio  : voice note, file audio, video note, atau document ber-mime audio/video\n//   - youtube: pesan teks (atau caption) yang mengandung link video YouTube\n//\n// Field `source` yang dihasilkan di sini ikut mengalir sampai ke tahap koreksi\n// dan ringkasan, karena prompt-nya berbeda per sumber — kamus istilah bisnis\n// hanya masuk akal untuk rekaman rapat, bukan untuk video orang lain.\nconst update = $input.first().json;\nconst message = update.message ?? update.channel_post ?? update;\n\nconst candidates = [\n  ['voice', message.voice],\n  ['audio', message.audio],\n  ['video_note', message.video_note],\n];\n\nlet kind = null;\nlet media = null;\nfor (const [name, value] of candidates) {\n  if (value && value.file_id) {\n    kind = name;\n    media = value;\n    break;\n  }\n}\n\nif (!media && message.document?.file_id) {\n  const mime = String(message.document.mime_type ?? '');\n  if (/^(audio|video)\\//.test(mime)) {\n    kind = 'document';\n    media = message.document;\n  }\n}\n\n// --- deteksi link YouTube ------------------------------------------------\n// Sengaja longgar: yang penting menangkap niat \"ini link YouTube\". Validasi\n// sesungguhnya dilakukan yt-service, yang bisa membedakan playlist, channel,\n// dan video tunggal dengan benar.\nconst text = `${message.text ?? ''} ${message.caption ?? ''}`.trim();\nconst YOUTUBE_LINK = /https?:\\/\\/(?:www\\.|m\\.|music\\.)?(?:youtube\\.com|youtu\\.be)\\/\\S+/i;\n\nconst linkMatch = media ? null : text.match(YOUTUBE_LINK);\n// Tanda baca di ujung kalimat ikut tertangkap \\S+ — dibuang supaya URL bersih.\nconst youtubeUrl = linkMatch ? linkMatch[0].replace(/[.,;:!?)\\]]+$/, '') : '';\n\nconst chatId = String(message.chat?.id ?? '');\n// Hadir hanya kalau pesan dikirim di dalam topic grup forum; dipakai supaya\n// balasan bot ikut masuk ke topic yang sama, bukan ke topic General.\nconst threadId = message.message_thread_id ?? undefined;\nconst sentAt = message.date ? new Date(message.date * 1000).toISOString() : new Date().toISOString();\n\nconst hasAudio = Boolean(media);\nconst hasYoutube = Boolean(youtubeUrl);\n\nreturn [\n  {\n    json: {\n      has_audio: hasAudio,\n      has_youtube: hasYoutube,\n      source: hasAudio ? 'voice' : hasYoutube ? 'youtube' : 'unknown',\n      youtube_url: youtubeUrl,\n      kind,\n      chat_id: chatId,\n      thread_id: threadId,\n      message_id: message.message_id ?? null,\n      from: message.from?.first_name ?? '',\n      caption: String(message.caption ?? '').trim(),\n      sent_at: sentAt,\n      file_id: media?.file_id ?? '',\n      file_name: media?.file_name ?? '',\n      mime_type: media?.mime_type ?? '',\n      file_size: Number(media?.file_size ?? 0),\n      duration_sec: Number(media?.duration ?? 0),\n    },\n  },\n];\n"
       }
     },
     {
-      "id": "185e240a-eff0-2aed-3b04-3b4afccc2768",
-      "name": "Guard: Ada Audio",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
+      "id": "4926d2b7-2bc1-1cd2-1103-c7a8e76b7e99",
+      "name": "Router: Jenis Input",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
       "position": [
         260,
         300
       ],
       "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "loose",
-            "version": 2
-          },
-          "conditions": [
+        "rules": {
+          "values": [
             {
-              "id": "1734be68-92b2-6ec2-32bc-b23324f00dcb",
-              "leftValue": "={{ $json.has_audio }}",
-              "rightValue": "",
-              "operator": {
-                "type": "boolean",
-                "operation": "true",
-                "singleValue": true
-              }
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "3f3232e9-1c00-3050-dba8-62d6d2857113",
+                    "leftValue": "={{ $json.has_audio }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "audio"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "88644386-939d-fe8e-8f49-e33ff4d3015a",
+                    "leftValue": "={{ $json.has_youtube }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "youtube"
             }
-          ],
-          "combinator": "and"
+          ]
         },
         "looseTypeValidation": true,
-        "options": {}
+        "options": {
+          "fallbackOutput": "extra"
+        }
       }
     },
     {
@@ -343,6 +384,184 @@
         }
       },
       "onError": "continueErrorOutput"
+    },
+    {
+      "id": "cf56750c-f3e1-624d-2c66-95b9978e52db",
+      "name": "Build YouTube Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        760
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Susun body request ke yt-service.\n// URL-nya berasal dari pesan Telegram — input bebas — jadi dirakit sebagai\n// objek lalu di-JSON.stringify() di sini dan dikirim sebagai Raw body, sama\n// seperti body LLM. Tanda kutip di URL tidak akan pernah merusak strukturnya.\nconst config = $('Config').first().json;\nconst source = $input.first().json;\n\nconst body = { url: String(source.youtube_url ?? '').trim() };\n\nreturn [\n  {\n    json: {\n      ...source,\n      yt_url: `${String(config.yt_service_base_url).replace(/\\/+$/, '')}/youtube/prepare`,\n      body: JSON.stringify(body),\n    },\n  },\n];\n"
+      }
+    },
+    {
+      "id": "df82bd94-b037-53dd-7dd2-f7c23abbd56e",
+      "name": "YouTube: Prepare",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        640,
+        760
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.yt_url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.body }}",
+        "options": {
+          "timeout": 1800000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_YT_SERVICE_CREDENTIAL_ID",
+          "name": "YouTube Service"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "578ad524-7b54-196b-ef25-4400f5357771",
+      "name": "Parse YouTube Prepare",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        860,
+        760
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Terjemahkan balasan yt-service jadi keputusan lanjut/berhenti.\n//\n// Node \"YouTube: Prepare\" sengaja memakai neverError + fullResponse +\n// continueRegularOutput, jadi SEMUA kemungkinan bermuara ke sini sebagai satu\n// item biasa: sukses, error HTTP dengan kode dari service, dan gagal terhubung\n// karena PC mati. Satu tempat untuk memutuskan, bukan tiga cabang terpisah.\n//\n// Kode error dari yt-service diterjemahkan jadi kalimat yang memberi tahu Rizky\n// apa yang harus dilakukan — tanpa ini semua kegagalan terlihat sama.\nconst previous = $('Build YouTube Request').first().json;\nconst response = $input.first().json ?? {};\n\nconst PESAN = {\n  INVALID_URL: ['Link tidak dikenali', 'Itu bukan link video YouTube. Kirim link satu video ya.'],\n  UNSUPPORTED_URL: ['Bukan video tunggal', 'Playlist dan channel belum didukung — kirim link satu video.'],\n  LIVE_NOT_SUPPORTED: ['Masih siaran langsung', 'Tunggu siarannya selesai dulu, baru kirim ulang linknya.'],\n  TOO_LONG: ['Video terlalu panjang', 'Batasnya 4 jam. Kalau perlu, potong dulu bagian yang mau diringkas.'],\n  DURATION_UNKNOWN: ['Durasi tidak terbaca', 'Kemungkinan premiere atau siaran yang belum selesai.'],\n  VIDEO_UNAVAILABLE: ['Video tidak tersedia', 'Videonya privat, sudah dihapus, atau dibatasi wilayah.'],\n  BOT_CHECK: ['YouTube minta verifikasi', 'YouTube menandai unduhan ini sebagai bot. Perlu pasang cookies di yt-service.'],\n  DOWNLOAD_FAILED: ['Gagal mengunduh video', 'Coba kirim ulang linknya sebentar lagi.'],\n  TRANSCODE_FAILED: ['Gagal menyiapkan audio', 'Konversi audio di PC gagal. Cek log yt-service.'],\n  STORAGE_FULL: ['Disk PC penuh', 'Kosongkan ruang di PC dulu, lalu kirim ulang.'],\n  UNAUTHORIZED: ['Kredensial yt-service salah', 'Token di n8n tidak cocok dengan SERVICE_TOKEN di .env PC.'],\n};\n\nconst meta = {\n  chat_id: previous.chat_id,\n  thread_id: previous.thread_id,\n  message_id: previous.message_id,\n  sent_at: previous.sent_at,\n  caption: previous.caption,\n  source: 'youtube',\n  youtube_url: previous.youtube_url,\n};\n\nfunction gagal(stage, message, detail) {\n  return [\n    {\n      json: {\n        ...meta,\n        yt_ok: false,\n        error_stage: stage,\n        error_message: message,\n        // Dibaca Build Error Message untuk ditampilkan sebagai <code>.\n        error: detail ? { message: String(detail).slice(0, 300) } : undefined,\n      },\n    },\n  ];\n}\n\n// Gagal terhubung sama sekali — item tidak punya statusCode, hanya error.\nif (response.error && response.statusCode === undefined) {\n  const detail = response.error?.message ?? response.error?.description ?? '';\n  return gagal(\n    'PC perekam tidak aktif',\n    'yt-service tidak merespons. Pastikan PC menyala dan Tailscale tersambung.',\n    detail,\n  );\n}\n\nconst status = Number(response.statusCode ?? 0);\n// fullResponse membungkus isinya di `body`; kalau opsi itu mati, isinya di akar.\nconst body = response.body ?? response;\n\nif (status !== 200 || body?.ok !== true) {\n  const code = String(body?.code ?? 'UNKNOWN');\n  const [stage, message] = PESAN[code] ?? [\n    'Gagal memproses link YouTube',\n    'Coba kirim ulang linknya. Kalau terus gagal, cek log yt-service di PC.',\n  ];\n  return gagal(stage, message, body?.message ?? `HTTP ${status}`);\n}\n\nreturn [\n  {\n    json: {\n      ...meta,\n      yt_ok: true,\n      video_id: body.videoId ?? '',\n      video_title: body.title ?? '',\n      video_channel: body.channel ?? '',\n      audio_url: body.audioUrl ?? '',\n      // Durasi dari yt-service dipakai sebagai perkiraan awal; angka final\n      // tetap diambil dari ffprobe di Prepare Audio.\n      duration_sec: Number(body.durationSec ?? 0),\n    },\n  },\n];\n"
+      }
+    },
+    {
+      "id": "072f3434-b422-1024-c96b-647dcf886e44",
+      "name": "Guard: YouTube Siap",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1080,
+        760
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "4acb4a75-b8b5-0875-8f85-837851c4f475",
+              "leftValue": "={{ $json.yt_ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "f3161489-bc2c-2808-a6df-5965b8946947",
+      "name": "Build YouTube Ack",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1300,
+        660
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Kabari Rizky bahwa videonya sudah dikenali dan sedang diproses.\n//\n// Video 1 jam butuh 5-8 menit sampai ringkasan datang. Tanpa kabar apa pun\n// selama itu, \"sedang jalan\" dan \"mati diam-diam\" terlihat sama persis. Pesan\n// ini sekalian jadi konfirmasi bahwa video yang diambil memang yang dimaksud.\nconst data = $input.first().json;\n\nfunction escapeHtml(value) {\n  return String(value ?? '')\n    .replace(/&/g, '&amp;')\n    .replace(/</g, '&lt;')\n    .replace(/>/g, '&gt;');\n}\n\nfunction formatDuration(seconds) {\n  const total = Math.max(0, Math.round(Number(seconds) || 0));\n  if (!total) return '';\n  const hours = Math.floor(total / 3600);\n  const minutes = Math.floor((total % 3600) / 60);\n  if (hours) return `${hours} jam ${minutes} mnt`;\n  return `${minutes || 1} mnt`;\n}\n\nconst title = String(data.video_title ?? '').trim() || 'Video YouTube';\nconst bits = [data.video_channel, formatDuration(data.duration_sec)].filter(Boolean);\n\nconst lines = [`🎬 <b>${escapeHtml(title)}</b>`];\nif (bits.length) lines.push(`<i>${escapeHtml(bits.join(' · '))}</i>`);\nlines.push('', '<i>Sedang diproses — ringkasan menyusul beberapa menit lagi.</i>');\n\nreturn [\n  {\n    json: {\n      chat_id: data.chat_id,\n      thread_id: data.thread_id,\n      ack_text: lines.join('\\n'),\n    },\n  },\n];\n"
+      }
+    },
+    {
+      "id": "c9f2e995-c2a8-db19-b118-63ff8b987098",
+      "name": "Telegram: Kirim Info Video",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1520,
+        660
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.ack_text }}",
+        "additionalFields": {
+          "parse_mode": "HTML",
+          "appendAttribution": false,
+          "message_thread_id": "={{ $json.thread_id }}"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram — Notulensi Bot"
+        }
+      }
+    },
+    {
+      "id": "9459e031-8723-d5e8-431f-8a08f5509a99",
+      "name": "YouTube: Download Audio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1740,
+        660
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Parse YouTube Prepare').first().json.audio_url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 600000,
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "data"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_YT_SERVICE_CREDENTIAL_ID",
+          "name": "YouTube Service"
+        }
+      },
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000
     },
     {
       "id": "7bac4977-1c27-058e-0bd2-b66b7f576512",
@@ -581,7 +800,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// Gabungkan hasil transkripsi semua part audio kembali jadi satu teks.\r\n// Node ini menerima item dari jalur Groq maupun jalur fallback OpenAI, jadi\r\n// urutannya dipulihkan lewat index part-nya, bukan lewat urutan item.\r\nconst items = $input.all();\r\nconst rows = [];\r\n\r\nfor (let i = 0; i < items.length; i++) {\r\n  const json = items[i].json ?? {};\r\n\r\n  let index = i;\r\n  try {\r\n    const matched = $('Split Parts').itemMatching(i);\r\n    const value = Number(matched?.json?.index);\r\n    if (Number.isFinite(value)) index = value;\r\n  } catch (error) {\r\n    // Paired-item tidak bisa ditelusuri (mis. provider mengubah bentuk item) —\r\n    // pakai urutan kedatangan sebagai perkiraan terbaik.\r\n    index = i;\r\n  }\r\n\r\n  const text = typeof json.text === 'string' ? json.text : (json.transcript ?? '');\r\n  rows.push({ index, text: String(text).trim() });\r\n}\r\n\r\nrows.sort((a, b) => a.index - b.index);\r\n\r\nconst transcriptRaw = rows\r\n  .map((row) => row.text)\r\n  .filter(Boolean)\r\n  .join('\\n\\n')\r\n  .trim();\r\n\r\nconst meta = $('Extract Audio').first().json;\r\n\r\nreturn [\r\n  {\r\n    json: {\r\n      chat_id: meta.chat_id,\r\n      thread_id: meta.thread_id,\r\n      message_id: meta.message_id,\r\n      sent_at: meta.sent_at,\r\n      caption: meta.caption,\r\n      duration_sec: meta.duration_sec,\r\n      part_count: rows.length,\r\n      transcript_raw: transcriptRaw,\r\n      has_transcript: transcriptRaw.length > 0,\r\n    },\r\n  },\r\n];\r\n"
+        "jsCode": "// Gabungkan hasil transkripsi semua part audio kembali jadi satu teks.\r\n// Node ini menerima item dari jalur Groq maupun jalur fallback OpenAI, jadi\r\n// urutannya dipulihkan lewat index part-nya, bukan lewat urutan item.\r\nconst items = $input.all();\r\nconst rows = [];\r\n\r\nfor (let i = 0; i < items.length; i++) {\r\n  const json = items[i].json ?? {};\r\n\r\n  let index = i;\r\n  try {\r\n    const matched = $('Split Parts').itemMatching(i);\r\n    const value = Number(matched?.json?.index);\r\n    if (Number.isFinite(value)) index = value;\r\n  } catch (error) {\r\n    // Paired-item tidak bisa ditelusuri (mis. provider mengubah bentuk item) —\r\n    // pakai urutan kedatangan sebagai perkiraan terbaik.\r\n    index = i;\r\n  }\r\n\r\n  const text = typeof json.text === 'string' ? json.text : (json.transcript ?? '');\r\n  rows.push({ index, text: String(text).trim() });\r\n}\r\n\r\nrows.sort((a, b) => a.index - b.index);\r\n\r\nconst transcriptRaw = rows\r\n  .map((row) => row.text)\r\n  .filter(Boolean)\r\n  .join('\\n\\n')\r\n  .trim();\r\n\r\nconst meta = $('Extract Input').first().json;\r\n\r\nfunction pick(nodeName) {\r\n  try {\r\n    return $(nodeName).first().json ?? null;\r\n  } catch (error) {\r\n    // Node itu tidak berjalan di eksekusi ini (mis. sumbernya voice note).\r\n    return null;\r\n  }\r\n}\r\n\r\nconst video = pick('Parse YouTube Prepare');\r\n// Durasi dari ffprobe adalah yang paling bisa dipercaya, dan tersedia untuk\r\n// kedua sumber. Metadata Telegram/YouTube dipakai kalau ffprobe tidak terbaca.\r\nconst prepared = pick('Prepare Audio');\r\nconst durationSec =\r\n  Number(prepared?.durationSec ?? 0) || Number(video?.duration_sec ?? 0) || Number(meta.duration_sec ?? 0);\r\n\r\nreturn [\r\n  {\r\n    json: {\r\n      chat_id: meta.chat_id,\r\n      thread_id: meta.thread_id,\r\n      message_id: meta.message_id,\r\n      sent_at: meta.sent_at,\r\n      caption: meta.caption,\r\n      source: meta.source ?? 'voice',\r\n      video_title: video?.video_title ?? '',\r\n      video_channel: video?.video_channel ?? '',\r\n      video_url: meta.youtube_url ?? '',\r\n      duration_sec: durationSec,\r\n      part_count: rows.length,\r\n      transcript_raw: transcriptRaw,\r\n      has_transcript: transcriptRaw.length > 0,\r\n    },\r\n  },\r\n];\r\n"
       }
     },
     {
@@ -630,7 +849,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// Susun body request LLM untuk koreksi istilah.\n//\n// Berbeda dengan tahap ringkasan yang memampatkan, tahap ini harus mengeluarkan\n// SELURUH transkrip lagi sebagai output. Transkrip satu jam (±15 ribu token)\n// akan menabrak plafon output model dan terpotong diam-diam. Jadi transkrip\n// panjang dipecah dulu, dan tiap potongan dikoreksi terpisah.\n//\n// Node ini mengembalikan satu item per potongan; HTTP Request node di n8n\n// otomatis berjalan sekali untuk tiap item, jadi tidak perlu loop manual.\n//\n// Transkrip adalah input bebas, jadi body-nya dirakit sebagai objek lalu\n// di-JSON.stringify() di sini dan dikirim sebagai Raw body oleh HTTP Request node.\nconst SYSTEM_PROMPT = \"Kamu adalah editor transkrip Bahasa Indonesia untuk rekaman rapat/brainstorm bisnis.\\r\\n\\r\\nTugasmu HANYA memperbaiki hasil speech-to-text, bukan menulis ulang.\\r\\n\\r\\nATURAN WAJIB:\\r\\n1. Perbaiki typo, salah dengar, dan ejaan istilah/brand memakai kamus di bawah.\\r\\n2. Perbaiki tanda baca, kapitalisasi, dan pemenggalan kalimat agar mudah dibaca.\\r\\n3. Hapus filler yang tidak bermakna (eh, emm, anu, gitu ya) bila mengganggu, tapi JANGAN memadatkan isi.\\r\\n4. JANGAN mengubah makna, JANGAN menambah informasi baru, JANGAN menyimpulkan, JANGAN menerjemahkan.\\r\\n5. Kalau sebuah kata benar-benar tidak jelas, biarkan apa adanya — jangan menebak fakta.\\r\\n6. Pertahankan angka, nominal, tanggal, dan nama orang persis seperti aslinya.\\r\\n7. Pisahkan menjadi paragraf saat topik berganti.\\r\\n\\r\\nKAMUS EJAAN (ini ejaan yang benar — pakai persis seperti ini):\\r\\nBrand & nama produk: Zaneva, Elyasr, Be.Syari, Oberbe, Muslimah Swimwear, Yaumiah\\nIstilah bisnis: ROAS, ROI, HPP, omzet, margin, gross profit, net profit, cashflow, CPA, CPM, CTR, AOV, SKU, COD, closing, reseller, affiliate, endorse, marketplace, funnel, landing page, retargeting, budget harian, content plan, stock opname, pre-order, restock, supplier, invoice, purchase order, cash on delivery\\r\\n\\r\\nFORMAT OUTPUT:\\r\\nBalas HANYA dengan teks transkrip yang sudah diperbaiki. Tanpa pembuka, tanpa penutup, tanpa penjelasan, tanpa tanda kutip pembungkus, tanpa blok kode.\";\n\nconst config = $('Config').first().json;\nconst source = $input.first().json;\nconst transcript = String(source.transcript_raw ?? '').trim();\n\n// Batas karakter per potongan. 0 / kosong = jangan potong sama sekali.\nconst chunkChars = Math.max(0, Number(config.correction_chunk_chars ?? 9000) || 0);\n\n/**\n * Potong teks di batas paling alami yang masih muat: paragraf dulu, lalu\n * kalimat, dan hanya kalau terpaksa dipotong di tengah. Tujuannya supaya tiap\n * potongan tetap bisa dibaca model sebagai satuan yang utuh.\n */\nfunction splitTranscript(text, limit) {\n  if (!limit || text.length <= limit) return text ? [text] : [];\n\n  const chunks = [];\n  let current = '';\n\n  const flush = () => {\n    const trimmed = current.trim();\n    if (trimmed) chunks.push(trimmed);\n    current = '';\n  };\n\n  // Coba sambung ke potongan berjalan; gagal kalau jadi melewati batas.\n  const append = (piece, separator) => {\n    const candidate = current ? current + separator + piece : piece;\n    if (candidate.length > limit) return false;\n    current = candidate;\n    return true;\n  };\n\n  for (const paragraph of text.split(/\\n{2,}/)) {\n    const block = paragraph.trim();\n    if (!block) continue;\n    if (append(block, '\\n\\n')) continue;\n\n    flush();\n    if (block.length <= limit) {\n      current = block;\n      continue;\n    }\n\n    // Satu paragraf saja sudah kebesaran → turun ke batas kalimat.\n    for (const sentence of block.match(/[^.!?\\n]+[.!?]*\\s*/g) ?? [block]) {\n      const piece = sentence.trim();\n      if (!piece) continue;\n      if (append(piece, ' ')) continue;\n\n      flush();\n      if (piece.length <= limit) {\n        current = piece;\n        continue;\n      }\n\n      // Kalimat sangat panjang tanpa tanda baca (jarang, tapi Whisper bisa\n      // menghasilkannya) → potong paksa daripada melewati batas.\n      for (let i = 0; i < piece.length; i += limit) chunks.push(piece.slice(i, i + limit));\n    }\n  }\n  flush();\n\n  return chunks.length ? chunks : [text];\n}\n\nconst split = splitTranscript(transcript, chunkChars);\n// Selalu kembalikan minimal satu item supaya metadata tidak hilang dari alur.\nconst chunks = split.length ? split : [transcript];\nconst total = chunks.length;\nconst llmUrl = `${String(config.llm_base_url).replace(/\\/+$/, '')}/chat/completions`;\n\nreturn chunks.map((chunk, index) => {\n  const messages = [{ role: 'system', content: SYSTEM_PROMPT }];\n\n  if (total > 1) {\n    // Tanpa instruksi ini model cenderung menambahkan \"Berikut lanjutannya:\"\n    // atau catatan bahwa teksnya terpotong — dan itu ikut tergabung ke hasil.\n    messages.push({\n      role: 'system',\n      content:\n        `Ini potongan ke-${index + 1} dari ${total} sebuah transkrip panjang. ` +\n        'Perbaiki potongan ini saja dan balas hanya isinya. Jangan menambah kalimat ' +\n        'penghubung, pembuka, penutup, atau catatan bahwa teks ini terpotong. ' +\n        'Wajar kalau potongan ini dimulai atau berakhir di tengah pembicaraan.',\n    });\n  }\n\n  messages.push({ role: 'user', content: chunk });\n\n  const body = {\n    model: config.llm_model,\n    temperature: Number(config.llm_temperature_correct ?? 0.1),\n    messages,\n  };\n\n  return {\n    json: {\n      ...source,\n      chunk_index: index,\n      chunk_total: total,\n      // Disimpan supaya Parse Correction bisa jatuh balik per potongan.\n      chunk_text: chunk,\n      llm_url: llmUrl,\n      body: JSON.stringify(body),\n    },\n  };\n});\n"
+        "jsCode": "// Susun body request LLM untuk koreksi istilah.\n//\n// Berbeda dengan tahap ringkasan yang memampatkan, tahap ini harus mengeluarkan\n// SELURUH transkrip lagi sebagai output. Transkrip satu jam (±15 ribu token)\n// akan menabrak plafon output model dan terpotong diam-diam. Jadi transkrip\n// panjang dipecah dulu, dan tiap potongan dikoreksi terpisah.\n//\n// Node ini mengembalikan satu item per potongan; HTTP Request node di n8n\n// otomatis berjalan sekali untuk tiap item, jadi tidak perlu loop manual.\n//\n// Transkrip adalah input bebas, jadi body-nya dirakit sebagai objek lalu\n// di-JSON.stringify() di sini dan dikirim sebagai Raw body oleh HTTP Request node.\nconst PROMPT_TEMPLATE = \"Kamu adalah editor transkrip Bahasa Indonesia.\\n\\n{{KONTEKS}}\\n\\nTugasmu HANYA memperbaiki hasil speech-to-text, bukan menulis ulang.\\n\\nATURAN WAJIB:\\n1. Perbaiki typo, salah dengar, dan ejaan istilah/brand.\\n2. Perbaiki tanda baca, kapitalisasi, dan pemenggalan kalimat agar mudah dibaca.\\n3. Hapus filler yang tidak bermakna (eh, emm, anu, gitu ya) bila mengganggu, tapi JANGAN memadatkan isi.\\n4. JANGAN mengubah makna, JANGAN menambah informasi baru, JANGAN menyimpulkan, JANGAN menerjemahkan.\\n5. Kalau sebuah kata benar-benar tidak jelas, biarkan apa adanya — jangan menebak fakta.\\n6. Pertahankan angka, nominal, tanggal, dan nama orang persis seperti aslinya.\\n7. Pisahkan menjadi paragraf saat topik berganti.\\n{{KAMUS}}\\n\\nFORMAT OUTPUT:\\nBalas HANYA dengan teks transkrip yang sudah diperbaiki. Tanpa pembuka, tanpa penutup, tanpa penjelasan, tanpa tanda kutip pembungkus, tanpa blok kode.\";\nconst GLOSSARY_BLOCK = \"Brand & nama produk: Zaneva, Elyasr, Be.Syari, Oberbe, Muslimah Swimwear, Yaumiah\\nIstilah bisnis: ROAS, ROI, HPP, omzet, margin, gross profit, net profit, cashflow, CPA, CPM, CTR, AOV, SKU, COD, closing, reseller, affiliate, endorse, marketplace, funnel, landing page, retargeting, budget harian, content plan, stock opname, pre-order, restock, supplier, invoice, purchase order, cash on delivery\";\n\nconst config = $('Config').first().json;\nconst source = $input.first().json;\nconst transcript = String(source.transcript_raw ?? '').trim();\n\n// Kamus istilah bisnis hanya masuk akal untuk rekaman Rizky sendiri. Untuk\n// video orang lain, menyuntikkan \"Zaneva/ROAS/HPP\" justru membuat model\n// \"mengoreksi\" kata yang sebenarnya sudah benar menjadi nama brand — kerusakan\n// yang tidak akan terlihat karena hasilnya tetap terbaca wajar.\nconst isBisnis = source.source !== 'youtube';\n\n// Judul video adalah teks dari orang lain yang masuk ke system prompt. Sudah\n// dibersihkan di yt-service, dibersihkan lagi di sini sebagai lapis kedua.\nconst videoTitle = String(source.video_title ?? '')\n  .replace(/[\\r\\n]+/g, ' ')\n  .trim()\n  .slice(0, 150);\n\nconst SYSTEM_PROMPT = PROMPT_TEMPLATE\n  .replace(\n    '{{KONTEKS}}',\n    isBisnis\n      ? 'Sumbernya rekaman rapat/brainstorm bisnis.'\n      : `Sumbernya transkrip otomatis video YouTube${videoTitle ? ` berjudul \"${videoTitle}\"` : ''}. Topiknya bisa apa saja.`,\n  )\n  // Blok kamus dihilangkan sepenuhnya untuk sumber non-bisnis — bukan diisi\n  // \"tidak ada kamus\", karena menyebut kamus kosong hanya membingungkan model.\n  .replace(\n    '{{KAMUS}}',\n    isBisnis ? `\\nKAMUS EJAAN (ini ejaan yang benar — pakai persis seperti ini):\\n${GLOSSARY_BLOCK}` : '',\n  )\n  .trim();\n\n// Batas karakter per potongan. 0 / kosong = jangan potong sama sekali.\nconst chunkChars = Math.max(0, Number(config.correction_chunk_chars ?? 9000) || 0);\n\n/**\n * Potong teks di batas paling alami yang masih muat: paragraf dulu, lalu\n * kalimat, dan hanya kalau terpaksa dipotong di tengah. Tujuannya supaya tiap\n * potongan tetap bisa dibaca model sebagai satuan yang utuh.\n */\nfunction splitTranscript(text, limit) {\n  if (!limit || text.length <= limit) return text ? [text] : [];\n\n  const chunks = [];\n  let current = '';\n\n  const flush = () => {\n    const trimmed = current.trim();\n    if (trimmed) chunks.push(trimmed);\n    current = '';\n  };\n\n  // Coba sambung ke potongan berjalan; gagal kalau jadi melewati batas.\n  const append = (piece, separator) => {\n    const candidate = current ? current + separator + piece : piece;\n    if (candidate.length > limit) return false;\n    current = candidate;\n    return true;\n  };\n\n  for (const paragraph of text.split(/\\n{2,}/)) {\n    const block = paragraph.trim();\n    if (!block) continue;\n    if (append(block, '\\n\\n')) continue;\n\n    flush();\n    if (block.length <= limit) {\n      current = block;\n      continue;\n    }\n\n    // Satu paragraf saja sudah kebesaran → turun ke batas kalimat.\n    for (const sentence of block.match(/[^.!?\\n]+[.!?]*\\s*/g) ?? [block]) {\n      const piece = sentence.trim();\n      if (!piece) continue;\n      if (append(piece, ' ')) continue;\n\n      flush();\n      if (piece.length <= limit) {\n        current = piece;\n        continue;\n      }\n\n      // Kalimat sangat panjang tanpa tanda baca (jarang, tapi Whisper bisa\n      // menghasilkannya) → potong paksa daripada melewati batas.\n      for (let i = 0; i < piece.length; i += limit) chunks.push(piece.slice(i, i + limit));\n    }\n  }\n  flush();\n\n  return chunks.length ? chunks : [text];\n}\n\nconst split = splitTranscript(transcript, chunkChars);\n// Selalu kembalikan minimal satu item supaya metadata tidak hilang dari alur.\nconst chunks = split.length ? split : [transcript];\nconst total = chunks.length;\nconst llmUrl = `${String(config.llm_base_url).replace(/\\/+$/, '')}/chat/completions`;\n\nreturn chunks.map((chunk, index) => {\n  const messages = [{ role: 'system', content: SYSTEM_PROMPT }];\n\n  if (total > 1) {\n    // Tanpa instruksi ini model cenderung menambahkan \"Berikut lanjutannya:\"\n    // atau catatan bahwa teksnya terpotong — dan itu ikut tergabung ke hasil.\n    messages.push({\n      role: 'system',\n      content:\n        `Ini potongan ke-${index + 1} dari ${total} sebuah transkrip panjang. ` +\n        'Perbaiki potongan ini saja dan balas hanya isinya. Jangan menambah kalimat ' +\n        'penghubung, pembuka, penutup, atau catatan bahwa teks ini terpotong. ' +\n        'Wajar kalau potongan ini dimulai atau berakhir di tengah pembicaraan.',\n    });\n  }\n\n  messages.push({ role: 'user', content: chunk });\n\n  const body = {\n    model: config.llm_model,\n    temperature: Number(config.llm_temperature_correct ?? 0.1),\n    messages,\n  };\n\n  return {\n    json: {\n      ...source,\n      chunk_index: index,\n      chunk_total: total,\n      // Disimpan supaya Parse Correction bisa jatuh balik per potongan.\n      chunk_text: chunk,\n      llm_url: llmUrl,\n      body: JSON.stringify(body),\n    },\n  };\n});\n"
       }
     },
     {
@@ -683,7 +902,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// Ambil teks balasan LLM dari bentuk respons OpenAI-compatible, lalu susun\n// kembali potongan-potongan transkrip jadi satu teks utuh.\n//\n// Node ini menerima satu item per potongan (lihat Build Correction Request) dan\n// memasang dua pengaman:\n//\n// 1. Potongan yang gagal — atau yang balasannya jauh lebih pendek dari aslinya,\n//    tanda balasannya kena plafon output model — dianggap tidak terpakai, dan\n//    yang dipakai adalah teks mentah potongan itu. Lebih baik satu bagian tidak\n//    terkoreksi daripada isinya hilang separuh tanpa ketahuan.\n// 2. Node \"LLM: Correct Terms\" memakai continueRegularOutput, jadi item yang\n//    error ikut masuk ke sini alih-alih menyalakan jalur error terpisah. Kalau\n//    lewat jalur error, satu potongan gagal akan membuat jalur error dan jalur\n//    sukses menyala bersamaan — dan Rizky menerima pesan error plus ringkasan.\nconst config = $('Config').first().json;\nconst requests = $('Build Correction Request');\nconst previous = requests.first().json;\n\nconst minRatio = Number(config.correction_min_ratio ?? 0.6);\n// Koreksi memang memangkas filler (\"eh\", \"anu\", \"gitu ya\"), jadi teks pendek\n// wajar menyusut banyak. Pemeriksaan rasio baru berarti untuk potongan yang\n// cukup panjang — yaitu satu-satunya yang bisa kena plafon output.\nconst GUARD_MIN_CHARS = 2000;\n\nfunction textOf(response) {\n  const choice = response?.choices?.[0];\n  const raw = choice?.message?.content ?? choice?.text ?? '';\n\n  return (Array.isArray(raw) ? raw.map((part) => part?.text ?? '').join('') : String(raw))\n    // Sebagian model membungkus jawaban dalam blok kode meski sudah dilarang.\n    .replace(/^\\s*```[a-z]*\\s*\\n?/i, '')\n    .replace(/\\n?```\\s*$/i, '')\n    .trim();\n}\n\nconst items = $input.all();\nconst rows = [];\nlet failed = 0;\n\nfor (let i = 0; i < items.length; i++) {\n  const response = items[i].json ?? {};\n\n  let request = {};\n  try {\n    request = requests.itemMatching(i)?.json ?? {};\n  } catch (error) {\n    // Paired-item tidak bisa ditelusuri (mis. provider mengubah bentuk item) —\n    // pakai urutan kedatangan sebagai perkiraan terbaik.\n    request = {};\n  }\n\n  const parsedIndex = Number(request.chunk_index);\n  const index = Number.isFinite(parsedIndex) ? parsedIndex : i;\n  const original = String(request.chunk_text ?? previous.transcript_raw ?? '');\n  const corrected = response.error ? '' : textOf(response);\n\n  const truncated =\n    original.length >= GUARD_MIN_CHARS && corrected.length < original.length * minRatio;\n  const usable = corrected.length > 0 && !truncated;\n\n  if (!usable) failed += 1;\n  rows.push({ index, text: usable ? corrected : original });\n}\n\nrows.sort((a, b) => a.index - b.index);\n\nconst merged = rows\n  .map((row) => row.text)\n  .filter(Boolean)\n  .join('\\n\\n')\n  .trim();\n\nconst total = rows.length;\n\nreturn [\n  {\n    json: {\n      chat_id: previous.chat_id,\n      thread_id: previous.thread_id,\n      message_id: previous.message_id,\n      sent_at: previous.sent_at,\n      caption: previous.caption,\n      duration_sec: previous.duration_sec,\n      part_count: previous.part_count,\n      transcript_raw: previous.transcript_raw,\n      // Kalau semuanya gagal, lebih baik pakai transkrip mentah daripada gagal.\n      transcript_corrected: merged || previous.transcript_raw,\n      correction_applied: total > 0 && failed < total,\n      correction_chunk_total: total,\n      correction_chunk_failed: failed,\n    },\n  },\n];\n"
+        "jsCode": "// Ambil teks balasan LLM dari bentuk respons OpenAI-compatible, lalu susun\n// kembali potongan-potongan transkrip jadi satu teks utuh.\n//\n// Node ini menerima satu item per potongan (lihat Build Correction Request) dan\n// memasang dua pengaman:\n//\n// 1. Potongan yang gagal — atau yang balasannya jauh lebih pendek dari aslinya,\n//    tanda balasannya kena plafon output model — dianggap tidak terpakai, dan\n//    yang dipakai adalah teks mentah potongan itu. Lebih baik satu bagian tidak\n//    terkoreksi daripada isinya hilang separuh tanpa ketahuan.\n// 2. Node \"LLM: Correct Terms\" memakai continueRegularOutput, jadi item yang\n//    error ikut masuk ke sini alih-alih menyalakan jalur error terpisah. Kalau\n//    lewat jalur error, satu potongan gagal akan membuat jalur error dan jalur\n//    sukses menyala bersamaan — dan Rizky menerima pesan error plus ringkasan.\nconst config = $('Config').first().json;\nconst requests = $('Build Correction Request');\nconst previous = requests.first().json;\n\nconst minRatio = Number(config.correction_min_ratio ?? 0.6);\n// Koreksi memang memangkas filler (\"eh\", \"anu\", \"gitu ya\"), jadi teks pendek\n// wajar menyusut banyak. Pemeriksaan rasio baru berarti untuk potongan yang\n// cukup panjang — yaitu satu-satunya yang bisa kena plafon output.\nconst GUARD_MIN_CHARS = 2000;\n\nfunction textOf(response) {\n  const choice = response?.choices?.[0];\n  const raw = choice?.message?.content ?? choice?.text ?? '';\n\n  return (Array.isArray(raw) ? raw.map((part) => part?.text ?? '').join('') : String(raw))\n    // Sebagian model membungkus jawaban dalam blok kode meski sudah dilarang.\n    .replace(/^\\s*```[a-z]*\\s*\\n?/i, '')\n    .replace(/\\n?```\\s*$/i, '')\n    .trim();\n}\n\nconst items = $input.all();\nconst rows = [];\nlet failed = 0;\n\nfor (let i = 0; i < items.length; i++) {\n  const response = items[i].json ?? {};\n\n  let request = {};\n  try {\n    request = requests.itemMatching(i)?.json ?? {};\n  } catch (error) {\n    // Paired-item tidak bisa ditelusuri (mis. provider mengubah bentuk item) —\n    // pakai urutan kedatangan sebagai perkiraan terbaik.\n    request = {};\n  }\n\n  const parsedIndex = Number(request.chunk_index);\n  const index = Number.isFinite(parsedIndex) ? parsedIndex : i;\n  const original = String(request.chunk_text ?? previous.transcript_raw ?? '');\n  const corrected = response.error ? '' : textOf(response);\n\n  const truncated =\n    original.length >= GUARD_MIN_CHARS && corrected.length < original.length * minRatio;\n  const usable = corrected.length > 0 && !truncated;\n\n  if (!usable) failed += 1;\n  rows.push({ index, text: usable ? corrected : original });\n}\n\nrows.sort((a, b) => a.index - b.index);\n\nconst merged = rows\n  .map((row) => row.text)\n  .filter(Boolean)\n  .join('\\n\\n')\n  .trim();\n\nconst total = rows.length;\n\nreturn [\n  {\n    json: {\n      chat_id: previous.chat_id,\n      thread_id: previous.thread_id,\n      message_id: previous.message_id,\n      sent_at: previous.sent_at,\n      caption: previous.caption,\n      // Ikut mengalir karena prompt ringkasan juga bergantung pada sumbernya.\n      source: previous.source,\n      video_title: previous.video_title,\n      video_channel: previous.video_channel,\n      video_url: previous.video_url,\n      duration_sec: previous.duration_sec,\n      part_count: previous.part_count,\n      transcript_raw: previous.transcript_raw,\n      // Kalau semuanya gagal, lebih baik pakai transkrip mentah daripada gagal.\n      transcript_corrected: merged || previous.transcript_raw,\n      correction_applied: total > 0 && failed < total,\n      correction_chunk_total: total,\n      correction_chunk_failed: failed,\n    },\n  },\n];\n"
       }
     },
     {
@@ -697,7 +916,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// Susun body request LLM untuk ringkasan + outline mind map.\r\n// Node yang sama dipakai untuk percobaan pertama dan percobaan ulang; saat\r\n// RETRY_MODE aktif, instruksi tambahan soal JSON valid ikut dikirim.\r\nconst SYSTEM_PROMPT = \"Kamu adalah notulis profesional. Dari transkrip rapat/brainstorm Bahasa Indonesia, hasilkan ringkasan dan outline mind map.\\r\\n\\r\\nATURAN ISI:\\r\\n1. Semua output dalam Bahasa Indonesia.\\r\\n2. Hanya gunakan informasi yang ada di transkrip. Dilarang mengarang, menebak, atau menambah rekomendasi yang tidak diucapkan.\\r\\n3. `summary` = inti pembahasan dan keputusan, ditulis sebagai 1-3 paragraf pendek. Tiap paragraf\\r\\n   maksimal 4 kalimat/baris, dan antar paragraf dipisah baris kosong (karakter `\\\\n\\\\n` di JSON).\\r\\n   Bukan daftar, bukan bullet.\\r\\n4. `title` = judul singkat maksimal 8 kata yang menggambarkan isi rekaman.\\r\\n5. `outline` = struktur mind map:\\r\\n   - Level 1: 1 node akar saja, isinya sama dengan `title`.\\r\\n   - Level 2: 3-7 tema besar.\\r\\n   - Level 3: detail/poin di bawah tiap tema, maksimal 6 per tema.\\r\\n   - MAKSIMAL 3 level. Dilarang membuat level ke-4.\\r\\n6. Teks tiap node maksimal 60 karakter, ringkas seperti judul, tanpa tanda baca di akhir.\\r\\n7. Kalau ada action item / keputusan, jadikan salah satu tema level 2 tersendiri.\\r\\n8. Jangan menaruh markdown (#, *, -) di dalam nilai `title`.\\r\\n\\r\\nFORMAT OUTPUT — balas HANYA dengan objek JSON valid, tanpa blok kode, tanpa teks lain:\\r\\n{\\r\\n  \\\"title\\\": \\\"string\\\",\\r\\n  \\\"summary\\\": \\\"string\\\",\\r\\n  \\\"outline\\\": [\\r\\n    {\\r\\n      \\\"title\\\": \\\"string\\\",\\r\\n      \\\"children\\\": [\\r\\n        { \\\"title\\\": \\\"string\\\", \\\"children\\\": [ { \\\"title\\\": \\\"string\\\" } ] }\\r\\n      ]\\r\\n    }\\r\\n  ]\\r\\n}\\r\\n\\r\\nKAMUS EJAAN (pakai persis seperti ini bila muncul):\\r\\nBrand & nama produk: Zaneva, Elyasr, Be.Syari, Oberbe, Muslimah Swimwear, Yaumiah\\nIstilah bisnis: ROAS, ROI, HPP, omzet, margin, gross profit, net profit, cashflow, CPA, CPM, CTR, AOV, SKU, COD, closing, reseller, affiliate, endorse, marketplace, funnel, landing page, retargeting, budget harian, content plan, stock opname, pre-order, restock, supplier, invoice, purchase order, cash on delivery\";\r\nconst RETRY_MODE = false;\r\n\r\nconst config = $('Config').first().json;\r\nconst source = RETRY_MODE ? $('Parse Correction').first().json : $input.first().json;\r\nconst transcript = String(source.transcript_corrected ?? source.transcript_raw ?? '').trim();\r\n\r\nconst messages = [{ role: 'system', content: SYSTEM_PROMPT }];\r\n\r\nif (RETRY_MODE) {\r\n  messages.push({\r\n    role: 'system',\r\n    content:\r\n      'PERCOBAAN ULANG. Balasan sebelumnya bukan JSON valid. Balas HANYA satu objek JSON valid ' +\r\n      'sesuai skema di atas — tanpa blok kode, tanpa komentar, tanpa teks pembuka atau penutup. ' +\r\n      'Pastikan seluruh tanda kurung dan tanda kutip tertutup rapi.',\r\n  });\r\n}\r\n\r\nmessages.push({ role: 'user', content: transcript });\r\n\r\nconst body = {\r\n  model: config.llm_model,\r\n  temperature: RETRY_MODE ? 0 : Number(config.llm_temperature_outline ?? 0.3),\r\n  messages,\r\n};\r\n\r\n// Beberapa provider OpenAI-compatible belum mendukung response_format —\r\n// matikan lewat field `llm_json_mode` di node Config kalau provider menolak.\r\nif (config.llm_json_mode === true || config.llm_json_mode === 'true') {\r\n  body.response_format = { type: 'json_object' };\r\n}\r\n\r\nreturn [\r\n  {\r\n    json: {\r\n      ...source,\r\n      llm_url: `${String(config.llm_base_url).replace(/\\/+$/, '')}/chat/completions`,\r\n      body: JSON.stringify(body),\r\n    },\r\n  },\r\n];\r\n"
+        "jsCode": "// Susun body request LLM untuk ringkasan + outline mind map.\r\n// Node yang sama dipakai untuk percobaan pertama dan percobaan ulang; saat\r\n// RETRY_MODE aktif, instruksi tambahan soal JSON valid ikut dikirim.\r\nconst PROMPT_TEMPLATE = \"Kamu adalah notulis profesional. Dari transkrip Bahasa Indonesia berikut, hasilkan ringkasan dan outline mind map.\\n\\n{{KONTEKS}}\\n\\nATURAN ISI:\\n1. Semua output dalam Bahasa Indonesia.\\n2. Hanya gunakan informasi yang ada di transkrip. Dilarang mengarang, menebak, atau menambah rekomendasi yang tidak diucapkan.\\n3. `summary` = inti pembahasan dan keputusan, ditulis sebagai 1-3 paragraf pendek. Tiap paragraf\\n   maksimal 4 kalimat/baris, dan antar paragraf dipisah baris kosong (karakter `\\\\n\\\\n` di JSON).\\n   Bukan daftar, bukan bullet.\\n4. `title` = judul singkat maksimal 8 kata yang menggambarkan isi rekaman.\\n5. `outline` = struktur mind map:\\n   - Level 1: 1 node akar saja, isinya sama dengan `title`.\\n   - Level 2: 3-7 tema besar.\\n   - Level 3: detail/poin di bawah tiap tema, maksimal 6 per tema.\\n   - MAKSIMAL 3 level. Dilarang membuat level ke-4.\\n6. Teks tiap node maksimal 60 karakter, ringkas seperti judul, tanpa tanda baca di akhir.\\n7. Kalau ada action item / keputusan, jadikan salah satu tema level 2 tersendiri.\\n8. Jangan menaruh markdown (#, *, -) di dalam nilai `title`.\\n\\nFORMAT OUTPUT — balas HANYA dengan objek JSON valid, tanpa blok kode, tanpa teks lain:\\n{\\n  \\\"title\\\": \\\"string\\\",\\n  \\\"summary\\\": \\\"string\\\",\\n  \\\"outline\\\": [\\n    {\\n      \\\"title\\\": \\\"string\\\",\\n      \\\"children\\\": [\\n        { \\\"title\\\": \\\"string\\\", \\\"children\\\": [ { \\\"title\\\": \\\"string\\\" } ] }\\n      ]\\n    }\\n  ]\\n}\\n{{KAMUS}}\";\r\nconst GLOSSARY_BLOCK = \"Brand & nama produk: Zaneva, Elyasr, Be.Syari, Oberbe, Muslimah Swimwear, Yaumiah\\nIstilah bisnis: ROAS, ROI, HPP, omzet, margin, gross profit, net profit, cashflow, CPA, CPM, CTR, AOV, SKU, COD, closing, reseller, affiliate, endorse, marketplace, funnel, landing page, retargeting, budget harian, content plan, stock opname, pre-order, restock, supplier, invoice, purchase order, cash on delivery\";\r\nconst RETRY_MODE = false;\r\n\r\nconst config = $('Config').first().json;\r\nconst source = RETRY_MODE ? $('Parse Correction').first().json : $input.first().json;\r\nconst transcript = String(source.transcript_corrected ?? source.transcript_raw ?? '').trim();\r\n\r\n// Alasan lengkap ada di build-correction-request.js — ringkasnya, bingkai\r\n// \"notulen rapat\" dan kamus brand Rizky salah kalau sumbernya video orang lain.\r\nconst isBisnis = source.source !== 'youtube';\r\n\r\nconst videoTitle = String(source.video_title ?? '')\r\n  .replace(/[\\r\\n]+/g, ' ')\r\n  .trim()\r\n  .slice(0, 150);\r\n\r\nconst SYSTEM_PROMPT = PROMPT_TEMPLATE\r\n  .replace(\r\n    '{{KONTEKS}}',\r\n    isBisnis\r\n      ? 'Sumbernya rekaman rapat/brainstorm bisnis. Perlakukan sebagai notulen.'\r\n      : `Sumbernya video YouTube${videoTitle ? ` berjudul \"${videoTitle}\"` : ''}. Perlakukan sebagai ringkasan isi video, bukan notulen rapat — tidak perlu mencari action item kalau memang tidak ada.`,\r\n  )\r\n  .replace(\r\n    '{{KAMUS}}',\r\n    isBisnis ? `\\nKAMUS EJAAN (pakai persis seperti ini bila muncul):\\n${GLOSSARY_BLOCK}` : '',\r\n  )\r\n  .trim();\r\n\r\nconst messages = [{ role: 'system', content: SYSTEM_PROMPT }];\r\n\r\nif (RETRY_MODE) {\r\n  messages.push({\r\n    role: 'system',\r\n    content:\r\n      'PERCOBAAN ULANG. Balasan sebelumnya bukan JSON valid. Balas HANYA satu objek JSON valid ' +\r\n      'sesuai skema di atas — tanpa blok kode, tanpa komentar, tanpa teks pembuka atau penutup. ' +\r\n      'Pastikan seluruh tanda kurung dan tanda kutip tertutup rapi.',\r\n  });\r\n}\r\n\r\nmessages.push({ role: 'user', content: transcript });\r\n\r\nconst body = {\r\n  model: config.llm_model,\r\n  temperature: RETRY_MODE ? 0 : Number(config.llm_temperature_outline ?? 0.3),\r\n  messages,\r\n};\r\n\r\n// Beberapa provider OpenAI-compatible belum mendukung response_format —\r\n// matikan lewat field `llm_json_mode` di node Config kalau provider menolak.\r\nif (config.llm_json_mode === true || config.llm_json_mode === 'true') {\r\n  body.response_format = { type: 'json_object' };\r\n}\r\n\r\nreturn [\r\n  {\r\n    json: {\r\n      ...source,\r\n      llm_url: `${String(config.llm_base_url).replace(/\\/+$/, '')}/chat/completions`,\r\n      body: JSON.stringify(body),\r\n    },\r\n  },\r\n];\r\n"
       }
     },
     {
@@ -744,7 +963,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// Parse balasan LLM jadi { title, summary, outline }.\r\n// Node ini sengaja tidak pernah melempar error: kalau JSON-nya rusak, ia hanya\r\n// menandai outline_valid = false supaya alur bisa retry / turun ke mode teks.\r\nconst SOURCE_NODE = \"Build Outline Request\";\r\n\r\nconst MAX_DEPTH = 3;\r\nconst MAX_CHILDREN = 8;\r\nconst MAX_LABEL = 80;\r\n\r\nconst response = $input.first().json;\r\nconst previous = $(SOURCE_NODE).first().json;\r\n\r\nconst choice = response?.choices?.[0];\r\nconst rawContent = choice?.message?.content ?? choice?.text ?? '';\r\nconst text = (Array.isArray(rawContent) ? rawContent.map((p) => p?.text ?? '').join('') : String(rawContent)).trim();\r\n\r\nfunction extractJson(input) {\r\n  const unfenced = input\r\n    .replace(/^\\s*```[a-z]*\\s*\\n?/i, '')\r\n    .replace(/\\n?```\\s*$/i, '')\r\n    .trim();\r\n\r\n  try {\r\n    return JSON.parse(unfenced);\r\n  } catch (error) {\r\n    // Model kadang menambahkan kalimat pembuka — ambil objek JSON terluar saja.\r\n    const start = unfenced.indexOf('{');\r\n    const end = unfenced.lastIndexOf('}');\r\n    if (start === -1 || end <= start) return null;\r\n    try {\r\n      return JSON.parse(unfenced.slice(start, end + 1));\r\n    } catch (innerError) {\r\n      return null;\r\n    }\r\n  }\r\n}\r\n\r\nfunction cleanLabel(value) {\r\n  return String(value ?? '')\r\n    .replace(/\\s+/g, ' ')\r\n    .replace(/^[\\s>#*+-]+/, '')\r\n    .replace(/^\\d+\\.\\s+/, '')\r\n    .trim()\r\n    .slice(0, MAX_LABEL);\r\n}\r\n\r\nfunction normalizeOutline(nodes, depth) {\r\n  if (!Array.isArray(nodes) || depth > MAX_DEPTH) return [];\r\n  const result = [];\r\n  for (const node of nodes.slice(0, MAX_CHILDREN)) {\r\n    const label = cleanLabel(typeof node === 'string' ? node : (node?.title ?? node?.name));\r\n    if (!label) continue;\r\n    const children = typeof node === 'string' ? [] : normalizeOutline(node?.children, depth + 1);\r\n    result.push(children.length ? { title: label, children } : { title: label });\r\n  }\r\n  return result;\r\n}\r\n\r\nconst parsed = extractJson(text);\r\nconst outline = normalizeOutline(parsed?.outline, 1);\r\nconst summary = String(parsed?.summary ?? '').trim();\r\nconst title = cleanLabel(parsed?.title) || cleanLabel(outline[0]?.title) || 'Catatan Suara';\r\n\r\nconst outlineValid = outline.length > 0 && summary.length > 0;\r\n\r\nreturn [\r\n  {\r\n    json: {\r\n      chat_id: previous.chat_id,\r\n      thread_id: previous.thread_id,\r\n      message_id: previous.message_id,\r\n      sent_at: previous.sent_at,\r\n      caption: previous.caption,\r\n      duration_sec: previous.duration_sec,\r\n      part_count: previous.part_count,\r\n      transcript_raw: previous.transcript_raw,\r\n      transcript_corrected: previous.transcript_corrected,\r\n      correction_applied: previous.correction_applied,\r\n      outline_valid: outlineValid,\r\n      title,\r\n      summary: summary || String(previous.transcript_corrected ?? '').slice(0, 600),\r\n      outline,\r\n      llm_raw_preview: outlineValid ? '' : text.slice(0, 400),\r\n    },\r\n  },\r\n];\r\n"
+        "jsCode": "// Parse balasan LLM jadi { title, summary, outline }.\r\n// Node ini sengaja tidak pernah melempar error: kalau JSON-nya rusak, ia hanya\r\n// menandai outline_valid = false supaya alur bisa retry / turun ke mode teks.\r\nconst SOURCE_NODE = \"Build Outline Request\";\r\n\r\nconst MAX_DEPTH = 3;\r\nconst MAX_CHILDREN = 8;\r\nconst MAX_LABEL = 80;\r\n\r\nconst response = $input.first().json;\r\nconst previous = $(SOURCE_NODE).first().json;\r\n\r\nconst choice = response?.choices?.[0];\r\nconst rawContent = choice?.message?.content ?? choice?.text ?? '';\r\nconst text = (Array.isArray(rawContent) ? rawContent.map((p) => p?.text ?? '').join('') : String(rawContent)).trim();\r\n\r\nfunction extractJson(input) {\r\n  const unfenced = input\r\n    .replace(/^\\s*```[a-z]*\\s*\\n?/i, '')\r\n    .replace(/\\n?```\\s*$/i, '')\r\n    .trim();\r\n\r\n  try {\r\n    return JSON.parse(unfenced);\r\n  } catch (error) {\r\n    // Model kadang menambahkan kalimat pembuka — ambil objek JSON terluar saja.\r\n    const start = unfenced.indexOf('{');\r\n    const end = unfenced.lastIndexOf('}');\r\n    if (start === -1 || end <= start) return null;\r\n    try {\r\n      return JSON.parse(unfenced.slice(start, end + 1));\r\n    } catch (innerError) {\r\n      return null;\r\n    }\r\n  }\r\n}\r\n\r\nfunction cleanLabel(value) {\r\n  return String(value ?? '')\r\n    .replace(/\\s+/g, ' ')\r\n    .replace(/^[\\s>#*+-]+/, '')\r\n    .replace(/^\\d+\\.\\s+/, '')\r\n    .trim()\r\n    .slice(0, MAX_LABEL);\r\n}\r\n\r\nfunction normalizeOutline(nodes, depth) {\r\n  if (!Array.isArray(nodes) || depth > MAX_DEPTH) return [];\r\n  const result = [];\r\n  for (const node of nodes.slice(0, MAX_CHILDREN)) {\r\n    const label = cleanLabel(typeof node === 'string' ? node : (node?.title ?? node?.name));\r\n    if (!label) continue;\r\n    const children = typeof node === 'string' ? [] : normalizeOutline(node?.children, depth + 1);\r\n    result.push(children.length ? { title: label, children } : { title: label });\r\n  }\r\n  return result;\r\n}\r\n\r\nconst parsed = extractJson(text);\r\nconst outline = normalizeOutline(parsed?.outline, 1);\r\nconst summary = String(parsed?.summary ?? '').trim();\r\nconst title = cleanLabel(parsed?.title) || cleanLabel(outline[0]?.title) || 'Catatan Suara';\r\n\r\nconst outlineValid = outline.length > 0 && summary.length > 0;\r\n\r\nreturn [\r\n  {\r\n    json: {\r\n      chat_id: previous.chat_id,\r\n      thread_id: previous.thread_id,\r\n      message_id: previous.message_id,\r\n      sent_at: previous.sent_at,\r\n      caption: previous.caption,\r\n      source: previous.source,\r\n      video_title: previous.video_title,\r\n      video_channel: previous.video_channel,\r\n      video_url: previous.video_url,\r\n      duration_sec: previous.duration_sec,\r\n      part_count: previous.part_count,\r\n      transcript_raw: previous.transcript_raw,\r\n      transcript_corrected: previous.transcript_corrected,\r\n      correction_applied: previous.correction_applied,\r\n      outline_valid: outlineValid,\r\n      title,\r\n      summary: summary || String(previous.transcript_corrected ?? '').slice(0, 600),\r\n      outline,\r\n      llm_raw_preview: outlineValid ? '' : text.slice(0, 400),\r\n    },\r\n  },\r\n];\r\n"
       }
     },
     {
@@ -793,7 +1012,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// Susun body request LLM untuk ringkasan + outline mind map.\r\n// Node yang sama dipakai untuk percobaan pertama dan percobaan ulang; saat\r\n// RETRY_MODE aktif, instruksi tambahan soal JSON valid ikut dikirim.\r\nconst SYSTEM_PROMPT = \"Kamu adalah notulis profesional. Dari transkrip rapat/brainstorm Bahasa Indonesia, hasilkan ringkasan dan outline mind map.\\r\\n\\r\\nATURAN ISI:\\r\\n1. Semua output dalam Bahasa Indonesia.\\r\\n2. Hanya gunakan informasi yang ada di transkrip. Dilarang mengarang, menebak, atau menambah rekomendasi yang tidak diucapkan.\\r\\n3. `summary` = inti pembahasan dan keputusan, ditulis sebagai 1-3 paragraf pendek. Tiap paragraf\\r\\n   maksimal 4 kalimat/baris, dan antar paragraf dipisah baris kosong (karakter `\\\\n\\\\n` di JSON).\\r\\n   Bukan daftar, bukan bullet.\\r\\n4. `title` = judul singkat maksimal 8 kata yang menggambarkan isi rekaman.\\r\\n5. `outline` = struktur mind map:\\r\\n   - Level 1: 1 node akar saja, isinya sama dengan `title`.\\r\\n   - Level 2: 3-7 tema besar.\\r\\n   - Level 3: detail/poin di bawah tiap tema, maksimal 6 per tema.\\r\\n   - MAKSIMAL 3 level. Dilarang membuat level ke-4.\\r\\n6. Teks tiap node maksimal 60 karakter, ringkas seperti judul, tanpa tanda baca di akhir.\\r\\n7. Kalau ada action item / keputusan, jadikan salah satu tema level 2 tersendiri.\\r\\n8. Jangan menaruh markdown (#, *, -) di dalam nilai `title`.\\r\\n\\r\\nFORMAT OUTPUT — balas HANYA dengan objek JSON valid, tanpa blok kode, tanpa teks lain:\\r\\n{\\r\\n  \\\"title\\\": \\\"string\\\",\\r\\n  \\\"summary\\\": \\\"string\\\",\\r\\n  \\\"outline\\\": [\\r\\n    {\\r\\n      \\\"title\\\": \\\"string\\\",\\r\\n      \\\"children\\\": [\\r\\n        { \\\"title\\\": \\\"string\\\", \\\"children\\\": [ { \\\"title\\\": \\\"string\\\" } ] }\\r\\n      ]\\r\\n    }\\r\\n  ]\\r\\n}\\r\\n\\r\\nKAMUS EJAAN (pakai persis seperti ini bila muncul):\\r\\nBrand & nama produk: Zaneva, Elyasr, Be.Syari, Oberbe, Muslimah Swimwear, Yaumiah\\nIstilah bisnis: ROAS, ROI, HPP, omzet, margin, gross profit, net profit, cashflow, CPA, CPM, CTR, AOV, SKU, COD, closing, reseller, affiliate, endorse, marketplace, funnel, landing page, retargeting, budget harian, content plan, stock opname, pre-order, restock, supplier, invoice, purchase order, cash on delivery\";\r\nconst RETRY_MODE = true;\r\n\r\nconst config = $('Config').first().json;\r\nconst source = RETRY_MODE ? $('Parse Correction').first().json : $input.first().json;\r\nconst transcript = String(source.transcript_corrected ?? source.transcript_raw ?? '').trim();\r\n\r\nconst messages = [{ role: 'system', content: SYSTEM_PROMPT }];\r\n\r\nif (RETRY_MODE) {\r\n  messages.push({\r\n    role: 'system',\r\n    content:\r\n      'PERCOBAAN ULANG. Balasan sebelumnya bukan JSON valid. Balas HANYA satu objek JSON valid ' +\r\n      'sesuai skema di atas — tanpa blok kode, tanpa komentar, tanpa teks pembuka atau penutup. ' +\r\n      'Pastikan seluruh tanda kurung dan tanda kutip tertutup rapi.',\r\n  });\r\n}\r\n\r\nmessages.push({ role: 'user', content: transcript });\r\n\r\nconst body = {\r\n  model: config.llm_model,\r\n  temperature: RETRY_MODE ? 0 : Number(config.llm_temperature_outline ?? 0.3),\r\n  messages,\r\n};\r\n\r\n// Beberapa provider OpenAI-compatible belum mendukung response_format —\r\n// matikan lewat field `llm_json_mode` di node Config kalau provider menolak.\r\nif (config.llm_json_mode === true || config.llm_json_mode === 'true') {\r\n  body.response_format = { type: 'json_object' };\r\n}\r\n\r\nreturn [\r\n  {\r\n    json: {\r\n      ...source,\r\n      llm_url: `${String(config.llm_base_url).replace(/\\/+$/, '')}/chat/completions`,\r\n      body: JSON.stringify(body),\r\n    },\r\n  },\r\n];\r\n"
+        "jsCode": "// Susun body request LLM untuk ringkasan + outline mind map.\r\n// Node yang sama dipakai untuk percobaan pertama dan percobaan ulang; saat\r\n// RETRY_MODE aktif, instruksi tambahan soal JSON valid ikut dikirim.\r\nconst PROMPT_TEMPLATE = \"Kamu adalah notulis profesional. Dari transkrip Bahasa Indonesia berikut, hasilkan ringkasan dan outline mind map.\\n\\n{{KONTEKS}}\\n\\nATURAN ISI:\\n1. Semua output dalam Bahasa Indonesia.\\n2. Hanya gunakan informasi yang ada di transkrip. Dilarang mengarang, menebak, atau menambah rekomendasi yang tidak diucapkan.\\n3. `summary` = inti pembahasan dan keputusan, ditulis sebagai 1-3 paragraf pendek. Tiap paragraf\\n   maksimal 4 kalimat/baris, dan antar paragraf dipisah baris kosong (karakter `\\\\n\\\\n` di JSON).\\n   Bukan daftar, bukan bullet.\\n4. `title` = judul singkat maksimal 8 kata yang menggambarkan isi rekaman.\\n5. `outline` = struktur mind map:\\n   - Level 1: 1 node akar saja, isinya sama dengan `title`.\\n   - Level 2: 3-7 tema besar.\\n   - Level 3: detail/poin di bawah tiap tema, maksimal 6 per tema.\\n   - MAKSIMAL 3 level. Dilarang membuat level ke-4.\\n6. Teks tiap node maksimal 60 karakter, ringkas seperti judul, tanpa tanda baca di akhir.\\n7. Kalau ada action item / keputusan, jadikan salah satu tema level 2 tersendiri.\\n8. Jangan menaruh markdown (#, *, -) di dalam nilai `title`.\\n\\nFORMAT OUTPUT — balas HANYA dengan objek JSON valid, tanpa blok kode, tanpa teks lain:\\n{\\n  \\\"title\\\": \\\"string\\\",\\n  \\\"summary\\\": \\\"string\\\",\\n  \\\"outline\\\": [\\n    {\\n      \\\"title\\\": \\\"string\\\",\\n      \\\"children\\\": [\\n        { \\\"title\\\": \\\"string\\\", \\\"children\\\": [ { \\\"title\\\": \\\"string\\\" } ] }\\n      ]\\n    }\\n  ]\\n}\\n{{KAMUS}}\";\r\nconst GLOSSARY_BLOCK = \"Brand & nama produk: Zaneva, Elyasr, Be.Syari, Oberbe, Muslimah Swimwear, Yaumiah\\nIstilah bisnis: ROAS, ROI, HPP, omzet, margin, gross profit, net profit, cashflow, CPA, CPM, CTR, AOV, SKU, COD, closing, reseller, affiliate, endorse, marketplace, funnel, landing page, retargeting, budget harian, content plan, stock opname, pre-order, restock, supplier, invoice, purchase order, cash on delivery\";\r\nconst RETRY_MODE = true;\r\n\r\nconst config = $('Config').first().json;\r\nconst source = RETRY_MODE ? $('Parse Correction').first().json : $input.first().json;\r\nconst transcript = String(source.transcript_corrected ?? source.transcript_raw ?? '').trim();\r\n\r\n// Alasan lengkap ada di build-correction-request.js — ringkasnya, bingkai\r\n// \"notulen rapat\" dan kamus brand Rizky salah kalau sumbernya video orang lain.\r\nconst isBisnis = source.source !== 'youtube';\r\n\r\nconst videoTitle = String(source.video_title ?? '')\r\n  .replace(/[\\r\\n]+/g, ' ')\r\n  .trim()\r\n  .slice(0, 150);\r\n\r\nconst SYSTEM_PROMPT = PROMPT_TEMPLATE\r\n  .replace(\r\n    '{{KONTEKS}}',\r\n    isBisnis\r\n      ? 'Sumbernya rekaman rapat/brainstorm bisnis. Perlakukan sebagai notulen.'\r\n      : `Sumbernya video YouTube${videoTitle ? ` berjudul \"${videoTitle}\"` : ''}. Perlakukan sebagai ringkasan isi video, bukan notulen rapat — tidak perlu mencari action item kalau memang tidak ada.`,\r\n  )\r\n  .replace(\r\n    '{{KAMUS}}',\r\n    isBisnis ? `\\nKAMUS EJAAN (pakai persis seperti ini bila muncul):\\n${GLOSSARY_BLOCK}` : '',\r\n  )\r\n  .trim();\r\n\r\nconst messages = [{ role: 'system', content: SYSTEM_PROMPT }];\r\n\r\nif (RETRY_MODE) {\r\n  messages.push({\r\n    role: 'system',\r\n    content:\r\n      'PERCOBAAN ULANG. Balasan sebelumnya bukan JSON valid. Balas HANYA satu objek JSON valid ' +\r\n      'sesuai skema di atas — tanpa blok kode, tanpa komentar, tanpa teks pembuka atau penutup. ' +\r\n      'Pastikan seluruh tanda kurung dan tanda kutip tertutup rapi.',\r\n  });\r\n}\r\n\r\nmessages.push({ role: 'user', content: transcript });\r\n\r\nconst body = {\r\n  model: config.llm_model,\r\n  temperature: RETRY_MODE ? 0 : Number(config.llm_temperature_outline ?? 0.3),\r\n  messages,\r\n};\r\n\r\n// Beberapa provider OpenAI-compatible belum mendukung response_format —\r\n// matikan lewat field `llm_json_mode` di node Config kalau provider menolak.\r\nif (config.llm_json_mode === true || config.llm_json_mode === 'true') {\r\n  body.response_format = { type: 'json_object' };\r\n}\r\n\r\nreturn [\r\n  {\r\n    json: {\r\n      ...source,\r\n      llm_url: `${String(config.llm_base_url).replace(/\\/+$/, '')}/chat/completions`,\r\n      body: JSON.stringify(body),\r\n    },\r\n  },\r\n];\r\n"
       }
     },
     {
@@ -840,7 +1059,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// Parse balasan LLM jadi { title, summary, outline }.\r\n// Node ini sengaja tidak pernah melempar error: kalau JSON-nya rusak, ia hanya\r\n// menandai outline_valid = false supaya alur bisa retry / turun ke mode teks.\r\nconst SOURCE_NODE = \"Build Outline Retry Request\";\r\n\r\nconst MAX_DEPTH = 3;\r\nconst MAX_CHILDREN = 8;\r\nconst MAX_LABEL = 80;\r\n\r\nconst response = $input.first().json;\r\nconst previous = $(SOURCE_NODE).first().json;\r\n\r\nconst choice = response?.choices?.[0];\r\nconst rawContent = choice?.message?.content ?? choice?.text ?? '';\r\nconst text = (Array.isArray(rawContent) ? rawContent.map((p) => p?.text ?? '').join('') : String(rawContent)).trim();\r\n\r\nfunction extractJson(input) {\r\n  const unfenced = input\r\n    .replace(/^\\s*```[a-z]*\\s*\\n?/i, '')\r\n    .replace(/\\n?```\\s*$/i, '')\r\n    .trim();\r\n\r\n  try {\r\n    return JSON.parse(unfenced);\r\n  } catch (error) {\r\n    // Model kadang menambahkan kalimat pembuka — ambil objek JSON terluar saja.\r\n    const start = unfenced.indexOf('{');\r\n    const end = unfenced.lastIndexOf('}');\r\n    if (start === -1 || end <= start) return null;\r\n    try {\r\n      return JSON.parse(unfenced.slice(start, end + 1));\r\n    } catch (innerError) {\r\n      return null;\r\n    }\r\n  }\r\n}\r\n\r\nfunction cleanLabel(value) {\r\n  return String(value ?? '')\r\n    .replace(/\\s+/g, ' ')\r\n    .replace(/^[\\s>#*+-]+/, '')\r\n    .replace(/^\\d+\\.\\s+/, '')\r\n    .trim()\r\n    .slice(0, MAX_LABEL);\r\n}\r\n\r\nfunction normalizeOutline(nodes, depth) {\r\n  if (!Array.isArray(nodes) || depth > MAX_DEPTH) return [];\r\n  const result = [];\r\n  for (const node of nodes.slice(0, MAX_CHILDREN)) {\r\n    const label = cleanLabel(typeof node === 'string' ? node : (node?.title ?? node?.name));\r\n    if (!label) continue;\r\n    const children = typeof node === 'string' ? [] : normalizeOutline(node?.children, depth + 1);\r\n    result.push(children.length ? { title: label, children } : { title: label });\r\n  }\r\n  return result;\r\n}\r\n\r\nconst parsed = extractJson(text);\r\nconst outline = normalizeOutline(parsed?.outline, 1);\r\nconst summary = String(parsed?.summary ?? '').trim();\r\nconst title = cleanLabel(parsed?.title) || cleanLabel(outline[0]?.title) || 'Catatan Suara';\r\n\r\nconst outlineValid = outline.length > 0 && summary.length > 0;\r\n\r\nreturn [\r\n  {\r\n    json: {\r\n      chat_id: previous.chat_id,\r\n      thread_id: previous.thread_id,\r\n      message_id: previous.message_id,\r\n      sent_at: previous.sent_at,\r\n      caption: previous.caption,\r\n      duration_sec: previous.duration_sec,\r\n      part_count: previous.part_count,\r\n      transcript_raw: previous.transcript_raw,\r\n      transcript_corrected: previous.transcript_corrected,\r\n      correction_applied: previous.correction_applied,\r\n      outline_valid: outlineValid,\r\n      title,\r\n      summary: summary || String(previous.transcript_corrected ?? '').slice(0, 600),\r\n      outline,\r\n      llm_raw_preview: outlineValid ? '' : text.slice(0, 400),\r\n    },\r\n  },\r\n];\r\n"
+        "jsCode": "// Parse balasan LLM jadi { title, summary, outline }.\r\n// Node ini sengaja tidak pernah melempar error: kalau JSON-nya rusak, ia hanya\r\n// menandai outline_valid = false supaya alur bisa retry / turun ke mode teks.\r\nconst SOURCE_NODE = \"Build Outline Retry Request\";\r\n\r\nconst MAX_DEPTH = 3;\r\nconst MAX_CHILDREN = 8;\r\nconst MAX_LABEL = 80;\r\n\r\nconst response = $input.first().json;\r\nconst previous = $(SOURCE_NODE).first().json;\r\n\r\nconst choice = response?.choices?.[0];\r\nconst rawContent = choice?.message?.content ?? choice?.text ?? '';\r\nconst text = (Array.isArray(rawContent) ? rawContent.map((p) => p?.text ?? '').join('') : String(rawContent)).trim();\r\n\r\nfunction extractJson(input) {\r\n  const unfenced = input\r\n    .replace(/^\\s*```[a-z]*\\s*\\n?/i, '')\r\n    .replace(/\\n?```\\s*$/i, '')\r\n    .trim();\r\n\r\n  try {\r\n    return JSON.parse(unfenced);\r\n  } catch (error) {\r\n    // Model kadang menambahkan kalimat pembuka — ambil objek JSON terluar saja.\r\n    const start = unfenced.indexOf('{');\r\n    const end = unfenced.lastIndexOf('}');\r\n    if (start === -1 || end <= start) return null;\r\n    try {\r\n      return JSON.parse(unfenced.slice(start, end + 1));\r\n    } catch (innerError) {\r\n      return null;\r\n    }\r\n  }\r\n}\r\n\r\nfunction cleanLabel(value) {\r\n  return String(value ?? '')\r\n    .replace(/\\s+/g, ' ')\r\n    .replace(/^[\\s>#*+-]+/, '')\r\n    .replace(/^\\d+\\.\\s+/, '')\r\n    .trim()\r\n    .slice(0, MAX_LABEL);\r\n}\r\n\r\nfunction normalizeOutline(nodes, depth) {\r\n  if (!Array.isArray(nodes) || depth > MAX_DEPTH) return [];\r\n  const result = [];\r\n  for (const node of nodes.slice(0, MAX_CHILDREN)) {\r\n    const label = cleanLabel(typeof node === 'string' ? node : (node?.title ?? node?.name));\r\n    if (!label) continue;\r\n    const children = typeof node === 'string' ? [] : normalizeOutline(node?.children, depth + 1);\r\n    result.push(children.length ? { title: label, children } : { title: label });\r\n  }\r\n  return result;\r\n}\r\n\r\nconst parsed = extractJson(text);\r\nconst outline = normalizeOutline(parsed?.outline, 1);\r\nconst summary = String(parsed?.summary ?? '').trim();\r\nconst title = cleanLabel(parsed?.title) || cleanLabel(outline[0]?.title) || 'Catatan Suara';\r\n\r\nconst outlineValid = outline.length > 0 && summary.length > 0;\r\n\r\nreturn [\r\n  {\r\n    json: {\r\n      chat_id: previous.chat_id,\r\n      thread_id: previous.thread_id,\r\n      message_id: previous.message_id,\r\n      sent_at: previous.sent_at,\r\n      caption: previous.caption,\r\n      source: previous.source,\r\n      video_title: previous.video_title,\r\n      video_channel: previous.video_channel,\r\n      video_url: previous.video_url,\r\n      duration_sec: previous.duration_sec,\r\n      part_count: previous.part_count,\r\n      transcript_raw: previous.transcript_raw,\r\n      transcript_corrected: previous.transcript_corrected,\r\n      correction_applied: previous.correction_applied,\r\n      outline_valid: outlineValid,\r\n      title,\r\n      summary: summary || String(previous.transcript_corrected ?? '').slice(0, 600),\r\n      outline,\r\n      llm_raw_preview: outlineValid ? '' : text.slice(0, 400),\r\n    },\r\n  },\r\n];\r\n"
       }
     },
     {
@@ -943,13 +1162,13 @@
       "parameters": {
         "resource": "message",
         "operation": "sendPhoto",
-        "chatId": "={{ $('Extract Audio').first().json.chat_id }}",
+        "chatId": "={{ $('Extract Input').first().json.chat_id }}",
         "binaryData": true,
         "binaryPropertyName": "data",
         "additionalFields": {
           "caption": "={{ '🧠 ' + $('Outline to Markdown').first().json.title }}",
           "appendAttribution": false,
-          "message_thread_id": "={{ $('Extract Audio').first().json.thread_id }}"
+          "message_thread_id": "={{ $('Extract Input').first().json.thread_id }}"
         }
       },
       "credentials": {
@@ -970,7 +1189,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// Rakit pesan ringkasan untuk Telegram (parse_mode HTML).\r\nconst WITH_MINDMAP = true;\r\nconst TELEGRAM_LIMIT = 4000;\r\n\r\nfunction pick(nodeName) {\r\n  try {\r\n    return $(nodeName).first().json ?? null;\r\n  } catch (error) {\r\n    return null;\r\n  }\r\n}\r\n\r\n// Node ini dipakai oleh jalur dengan dan tanpa mind map, jadi sumber datanya\r\n// dicari dari kandidat yang benar-benar sempat berjalan.\r\nconst candidates = ['Outline to Markdown', 'Parse Outline Retry', 'Parse Outline']\r\n  .map(pick)\r\n  .filter(Boolean);\r\nconst data = candidates.find((item) => item.outline_valid) ?? candidates[0] ?? pick('Parse Correction') ?? {};\r\n\r\nfunction escapeHtml(value) {\r\n  return String(value ?? '')\r\n    .replace(/&/g, '&amp;')\r\n    .replace(/</g, '&lt;')\r\n    .replace(/>/g, '&gt;');\r\n}\r\n\r\nfunction formatDuration(seconds) {\r\n  const total = Math.max(0, Math.round(Number(seconds) || 0));\r\n  if (!total) return '';\r\n  const minutes = Math.floor(total / 60);\r\n  const rest = total % 60;\r\n  return minutes ? `${minutes} mnt ${rest} dtk` : `${rest} dtk`;\r\n}\r\n\r\nfunction formatDate(iso) {\r\n  try {\r\n    return new Date(iso).toLocaleString('id-ID', {\r\n      timeZone: 'Asia/Jakarta',\r\n      day: '2-digit',\r\n      month: 'short',\r\n      year: 'numeric',\r\n      hour: '2-digit',\r\n      minute: '2-digit',\r\n    });\r\n  } catch (error) {\r\n    return '';\r\n  }\r\n}\r\n\r\nlet durationSec = Number(data.duration_sec ?? 0);\r\nconst prepared = pick('Prepare Audio');\r\nif (!durationSec && prepared?.durationSec) durationSec = Number(prepared.durationSec);\r\n\r\nconst metaParts = [formatDuration(durationSec), formatDate(data.sent_at)].filter(Boolean);\r\n\r\nconst lines = [`🗒 <b>${escapeHtml(data.title ?? 'Catatan Suara')}</b>`];\r\nif (metaParts.length) lines.push(`<i>${escapeHtml(metaParts.join(' · '))}</i>`);\r\nlines.push('', escapeHtml(data.summary ?? '').trim());\r\n\r\nconst outline = Array.isArray(data.outline) ? data.outline : [];\r\nconst themes = outline.length === 1 && Array.isArray(outline[0]?.children) ? outline[0].children : outline;\r\n\r\nif (themes.length) {\r\n  lines.push('', '<b>Poin utama</b>');\r\n  for (const theme of themes) {\r\n    lines.push(`• <b>${escapeHtml(theme?.title)}</b>`);\r\n    for (const child of Array.isArray(theme?.children) ? theme.children : []) {\r\n      lines.push(`   ◦ ${escapeHtml(child?.title)}`);\r\n    }\r\n  }\r\n}\r\n\r\nif (!WITH_MINDMAP) {\r\n  lines.push('', '<i>⚠️ Mind map gagal dibuat kali ini — ringkasan tetap dikirim.</i>');\r\n}\r\n\r\nlet text = lines.join('\\n').replace(/\\n{3,}/g, '\\n\\n').trim();\r\nif (text.length > TELEGRAM_LIMIT) {\r\n  text = `${text.slice(0, TELEGRAM_LIMIT - 30).trim()}\\n\\n<i>… (dipotong)</i>`;\r\n}\r\n\r\nreturn [\r\n  {\r\n    json: {\r\n      chat_id: data.chat_id ?? $('Extract Audio').first().json.chat_id,\r\n      thread_id: data.thread_id ?? $('Extract Audio').first().json.thread_id,\r\n      title: data.title ?? 'Catatan Suara',\r\n      summary_text: text,\r\n    },\r\n  },\r\n];\r\n"
+        "jsCode": "// Rakit pesan ringkasan untuk Telegram (parse_mode HTML).\r\nconst WITH_MINDMAP = true;\r\nconst TELEGRAM_LIMIT = 4000;\r\n\r\nfunction pick(nodeName) {\r\n  try {\r\n    return $(nodeName).first().json ?? null;\r\n  } catch (error) {\r\n    return null;\r\n  }\r\n}\r\n\r\n// Node ini dipakai oleh jalur dengan dan tanpa mind map, jadi sumber datanya\r\n// dicari dari kandidat yang benar-benar sempat berjalan.\r\nconst candidates = ['Outline to Markdown', 'Parse Outline Retry', 'Parse Outline']\r\n  .map(pick)\r\n  .filter(Boolean);\r\nconst data = candidates.find((item) => item.outline_valid) ?? candidates[0] ?? pick('Parse Correction') ?? {};\r\n\r\nfunction escapeHtml(value) {\r\n  return String(value ?? '')\r\n    .replace(/&/g, '&amp;')\r\n    .replace(/</g, '&lt;')\r\n    .replace(/>/g, '&gt;');\r\n}\r\n\r\nfunction formatDuration(seconds) {\r\n  const total = Math.max(0, Math.round(Number(seconds) || 0));\r\n  if (!total) return '';\r\n  const minutes = Math.floor(total / 60);\r\n  const rest = total % 60;\r\n  return minutes ? `${minutes} mnt ${rest} dtk` : `${rest} dtk`;\r\n}\r\n\r\nfunction formatDate(iso) {\r\n  try {\r\n    return new Date(iso).toLocaleString('id-ID', {\r\n      timeZone: 'Asia/Jakarta',\r\n      day: '2-digit',\r\n      month: 'short',\r\n      year: 'numeric',\r\n      hour: '2-digit',\r\n      minute: '2-digit',\r\n    });\r\n  } catch (error) {\r\n    return '';\r\n  }\r\n}\r\n\r\nlet durationSec = Number(data.duration_sec ?? 0);\r\nconst prepared = pick('Prepare Audio');\r\nif (!durationSec && prepared?.durationSec) durationSec = Number(prepared.durationSec);\r\n\r\nconst metaParts = [formatDuration(durationSec), formatDate(data.sent_at)].filter(Boolean);\r\n\r\nconst fromYoutube = data.source === 'youtube';\r\n\r\nconst lines = [\r\n  `${fromYoutube ? '🎬' : '🗒'} <b>${escapeHtml(data.title ?? (fromYoutube ? 'Ringkasan Video' : 'Catatan Suara'))}</b>`,\r\n];\r\nif (metaParts.length) lines.push(`<i>${escapeHtml(metaParts.join(' · '))}</i>`);\r\n\r\n// Judul di atas berasal dari LLM, jadi untuk sumber YouTube ditambahkan asal\r\n// videonya — supaya jelas ringkasan ini dari video yang mana.\r\nif (fromYoutube && (data.video_title || data.video_url)) {\r\n  const asal = [data.video_title, data.video_channel].filter(Boolean).join(' — ');\r\n  if (asal) lines.push(`<i>Sumber: ${escapeHtml(asal)}</i>`);\r\n  // URL polos, bukan tag <a>: Telegram tetap menjadikannya tautan, dan tidak\r\n  // ada tanda kurung sudut tambahan yang bisa merusak parse_mode HTML.\r\n  if (data.video_url) lines.push(escapeHtml(data.video_url));\r\n}\r\n\r\nlines.push('', escapeHtml(data.summary ?? '').trim());\r\n\r\nconst outline = Array.isArray(data.outline) ? data.outline : [];\r\nconst themes = outline.length === 1 && Array.isArray(outline[0]?.children) ? outline[0].children : outline;\r\n\r\nif (themes.length) {\r\n  lines.push('', '<b>Poin utama</b>');\r\n  for (const theme of themes) {\r\n    lines.push(`• <b>${escapeHtml(theme?.title)}</b>`);\r\n    for (const child of Array.isArray(theme?.children) ? theme.children : []) {\r\n      lines.push(`   ◦ ${escapeHtml(child?.title)}`);\r\n    }\r\n  }\r\n}\r\n\r\nif (!WITH_MINDMAP) {\r\n  lines.push('', '<i>⚠️ Mind map gagal dibuat kali ini — ringkasan tetap dikirim.</i>');\r\n}\r\n\r\nlet text = lines.join('\\n').replace(/\\n{3,}/g, '\\n\\n').trim();\r\nif (text.length > TELEGRAM_LIMIT) {\r\n  text = `${text.slice(0, TELEGRAM_LIMIT - 30).trim()}\\n\\n<i>… (dipotong)</i>`;\r\n}\r\n\r\nreturn [\r\n  {\r\n    json: {\r\n      chat_id: data.chat_id ?? $('Extract Input').first().json.chat_id,\r\n      thread_id: data.thread_id ?? $('Extract Input').first().json.thread_id,\r\n      title: data.title ?? 'Catatan Suara',\r\n      summary_text: text,\r\n    },\r\n  },\r\n];\r\n"
       }
     },
     {
@@ -1011,7 +1230,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// Rakit pesan ringkasan untuk Telegram (parse_mode HTML).\r\nconst WITH_MINDMAP = false;\r\nconst TELEGRAM_LIMIT = 4000;\r\n\r\nfunction pick(nodeName) {\r\n  try {\r\n    return $(nodeName).first().json ?? null;\r\n  } catch (error) {\r\n    return null;\r\n  }\r\n}\r\n\r\n// Node ini dipakai oleh jalur dengan dan tanpa mind map, jadi sumber datanya\r\n// dicari dari kandidat yang benar-benar sempat berjalan.\r\nconst candidates = ['Outline to Markdown', 'Parse Outline Retry', 'Parse Outline']\r\n  .map(pick)\r\n  .filter(Boolean);\r\nconst data = candidates.find((item) => item.outline_valid) ?? candidates[0] ?? pick('Parse Correction') ?? {};\r\n\r\nfunction escapeHtml(value) {\r\n  return String(value ?? '')\r\n    .replace(/&/g, '&amp;')\r\n    .replace(/</g, '&lt;')\r\n    .replace(/>/g, '&gt;');\r\n}\r\n\r\nfunction formatDuration(seconds) {\r\n  const total = Math.max(0, Math.round(Number(seconds) || 0));\r\n  if (!total) return '';\r\n  const minutes = Math.floor(total / 60);\r\n  const rest = total % 60;\r\n  return minutes ? `${minutes} mnt ${rest} dtk` : `${rest} dtk`;\r\n}\r\n\r\nfunction formatDate(iso) {\r\n  try {\r\n    return new Date(iso).toLocaleString('id-ID', {\r\n      timeZone: 'Asia/Jakarta',\r\n      day: '2-digit',\r\n      month: 'short',\r\n      year: 'numeric',\r\n      hour: '2-digit',\r\n      minute: '2-digit',\r\n    });\r\n  } catch (error) {\r\n    return '';\r\n  }\r\n}\r\n\r\nlet durationSec = Number(data.duration_sec ?? 0);\r\nconst prepared = pick('Prepare Audio');\r\nif (!durationSec && prepared?.durationSec) durationSec = Number(prepared.durationSec);\r\n\r\nconst metaParts = [formatDuration(durationSec), formatDate(data.sent_at)].filter(Boolean);\r\n\r\nconst lines = [`🗒 <b>${escapeHtml(data.title ?? 'Catatan Suara')}</b>`];\r\nif (metaParts.length) lines.push(`<i>${escapeHtml(metaParts.join(' · '))}</i>`);\r\nlines.push('', escapeHtml(data.summary ?? '').trim());\r\n\r\nconst outline = Array.isArray(data.outline) ? data.outline : [];\r\nconst themes = outline.length === 1 && Array.isArray(outline[0]?.children) ? outline[0].children : outline;\r\n\r\nif (themes.length) {\r\n  lines.push('', '<b>Poin utama</b>');\r\n  for (const theme of themes) {\r\n    lines.push(`• <b>${escapeHtml(theme?.title)}</b>`);\r\n    for (const child of Array.isArray(theme?.children) ? theme.children : []) {\r\n      lines.push(`   ◦ ${escapeHtml(child?.title)}`);\r\n    }\r\n  }\r\n}\r\n\r\nif (!WITH_MINDMAP) {\r\n  lines.push('', '<i>⚠️ Mind map gagal dibuat kali ini — ringkasan tetap dikirim.</i>');\r\n}\r\n\r\nlet text = lines.join('\\n').replace(/\\n{3,}/g, '\\n\\n').trim();\r\nif (text.length > TELEGRAM_LIMIT) {\r\n  text = `${text.slice(0, TELEGRAM_LIMIT - 30).trim()}\\n\\n<i>… (dipotong)</i>`;\r\n}\r\n\r\nreturn [\r\n  {\r\n    json: {\r\n      chat_id: data.chat_id ?? $('Extract Audio').first().json.chat_id,\r\n      thread_id: data.thread_id ?? $('Extract Audio').first().json.thread_id,\r\n      title: data.title ?? 'Catatan Suara',\r\n      summary_text: text,\r\n    },\r\n  },\r\n];\r\n"
+        "jsCode": "// Rakit pesan ringkasan untuk Telegram (parse_mode HTML).\r\nconst WITH_MINDMAP = false;\r\nconst TELEGRAM_LIMIT = 4000;\r\n\r\nfunction pick(nodeName) {\r\n  try {\r\n    return $(nodeName).first().json ?? null;\r\n  } catch (error) {\r\n    return null;\r\n  }\r\n}\r\n\r\n// Node ini dipakai oleh jalur dengan dan tanpa mind map, jadi sumber datanya\r\n// dicari dari kandidat yang benar-benar sempat berjalan.\r\nconst candidates = ['Outline to Markdown', 'Parse Outline Retry', 'Parse Outline']\r\n  .map(pick)\r\n  .filter(Boolean);\r\nconst data = candidates.find((item) => item.outline_valid) ?? candidates[0] ?? pick('Parse Correction') ?? {};\r\n\r\nfunction escapeHtml(value) {\r\n  return String(value ?? '')\r\n    .replace(/&/g, '&amp;')\r\n    .replace(/</g, '&lt;')\r\n    .replace(/>/g, '&gt;');\r\n}\r\n\r\nfunction formatDuration(seconds) {\r\n  const total = Math.max(0, Math.round(Number(seconds) || 0));\r\n  if (!total) return '';\r\n  const minutes = Math.floor(total / 60);\r\n  const rest = total % 60;\r\n  return minutes ? `${minutes} mnt ${rest} dtk` : `${rest} dtk`;\r\n}\r\n\r\nfunction formatDate(iso) {\r\n  try {\r\n    return new Date(iso).toLocaleString('id-ID', {\r\n      timeZone: 'Asia/Jakarta',\r\n      day: '2-digit',\r\n      month: 'short',\r\n      year: 'numeric',\r\n      hour: '2-digit',\r\n      minute: '2-digit',\r\n    });\r\n  } catch (error) {\r\n    return '';\r\n  }\r\n}\r\n\r\nlet durationSec = Number(data.duration_sec ?? 0);\r\nconst prepared = pick('Prepare Audio');\r\nif (!durationSec && prepared?.durationSec) durationSec = Number(prepared.durationSec);\r\n\r\nconst metaParts = [formatDuration(durationSec), formatDate(data.sent_at)].filter(Boolean);\r\n\r\nconst fromYoutube = data.source === 'youtube';\r\n\r\nconst lines = [\r\n  `${fromYoutube ? '🎬' : '🗒'} <b>${escapeHtml(data.title ?? (fromYoutube ? 'Ringkasan Video' : 'Catatan Suara'))}</b>`,\r\n];\r\nif (metaParts.length) lines.push(`<i>${escapeHtml(metaParts.join(' · '))}</i>`);\r\n\r\n// Judul di atas berasal dari LLM, jadi untuk sumber YouTube ditambahkan asal\r\n// videonya — supaya jelas ringkasan ini dari video yang mana.\r\nif (fromYoutube && (data.video_title || data.video_url)) {\r\n  const asal = [data.video_title, data.video_channel].filter(Boolean).join(' — ');\r\n  if (asal) lines.push(`<i>Sumber: ${escapeHtml(asal)}</i>`);\r\n  // URL polos, bukan tag <a>: Telegram tetap menjadikannya tautan, dan tidak\r\n  // ada tanda kurung sudut tambahan yang bisa merusak parse_mode HTML.\r\n  if (data.video_url) lines.push(escapeHtml(data.video_url));\r\n}\r\n\r\nlines.push('', escapeHtml(data.summary ?? '').trim());\r\n\r\nconst outline = Array.isArray(data.outline) ? data.outline : [];\r\nconst themes = outline.length === 1 && Array.isArray(outline[0]?.children) ? outline[0].children : outline;\r\n\r\nif (themes.length) {\r\n  lines.push('', '<b>Poin utama</b>');\r\n  for (const theme of themes) {\r\n    lines.push(`• <b>${escapeHtml(theme?.title)}</b>`);\r\n    for (const child of Array.isArray(theme?.children) ? theme.children : []) {\r\n      lines.push(`   ◦ ${escapeHtml(child?.title)}`);\r\n    }\r\n  }\r\n}\r\n\r\nif (!WITH_MINDMAP) {\r\n  lines.push('', '<i>⚠️ Mind map gagal dibuat kali ini — ringkasan tetap dikirim.</i>');\r\n}\r\n\r\nlet text = lines.join('\\n').replace(/\\n{3,}/g, '\\n\\n').trim();\r\nif (text.length > TELEGRAM_LIMIT) {\r\n  text = `${text.slice(0, TELEGRAM_LIMIT - 30).trim()}\\n\\n<i>… (dipotong)</i>`;\r\n}\r\n\r\nreturn [\r\n  {\r\n    json: {\r\n      chat_id: data.chat_id ?? $('Extract Input').first().json.chat_id,\r\n      thread_id: data.thread_id ?? $('Extract Input').first().json.thread_id,\r\n      title: data.title ?? 'Catatan Suara',\r\n      summary_text: text,\r\n    },\r\n  },\r\n];\r\n"
       }
     },
     {
@@ -1052,7 +1271,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// Kirim transkrip bersih: sebagai pesan biasa kalau pendek, sebagai file .txt\r\n// kalau panjang (batas pesan Telegram 4096 karakter).\r\nconst config = $('Config').first().json;\r\nconst data = $('Parse Correction').first().json;\r\n\r\nconst transcript = String(data.transcript_corrected ?? data.transcript_raw ?? '').trim();\r\nconst limit = Number(config.max_transcript_inline ?? 3000);\r\nconst chatId = data.chat_id ?? $('Extract Audio').first().json.chat_id;\r\nconst threadId = data.thread_id ?? $('Extract Audio').first().json.thread_id;\r\n\r\nfunction escapeHtml(value) {\r\n  return String(value ?? '')\r\n    .replace(/&/g, '&amp;')\r\n    .replace(/</g, '&lt;')\r\n    .replace(/>/g, '&gt;');\r\n}\r\n\r\nfunction stamp(iso) {\r\n  const date = new Date(iso ?? Date.now());\r\n  const valid = Number.isNaN(date.getTime()) ? new Date() : date;\r\n  return valid.toISOString().slice(0, 16).replace('T', '-').replace(':', '');\r\n}\r\n\r\nif (transcript.length <= limit) {\r\n  return [\r\n    {\r\n      json: {\r\n        chat_id: chatId,\r\n        thread_id: threadId,\r\n        is_file: false,\r\n        transcript_text: `📝 <b>Transkrip</b>\\n\\n${escapeHtml(transcript)}`,\r\n      },\r\n    },\r\n  ];\r\n}\r\n\r\nconst header = [\r\n  data.title ? `Judul: ${data.title}` : null,\r\n  `Tanggal: ${data.sent_at ?? ''}`,\r\n  '',\r\n  '',\r\n].filter((line) => line !== null);\r\n\r\nconst content = `${header.join('\\n')}${transcript}\\n`;\r\nconst fileName = `transkrip-${stamp(data.sent_at)}.txt`;\r\n\r\nreturn [\r\n  {\r\n    json: {\r\n      chat_id: chatId,\r\n      thread_id: threadId,\r\n      is_file: true,\r\n      file_name: fileName,\r\n      transcript_text: '',\r\n    },\r\n    binary: {\r\n      data: {\r\n        data: Buffer.from(content, 'utf8').toString('base64'),\r\n        mimeType: 'text/plain',\r\n        fileName,\r\n        fileExtension: 'txt',\r\n      },\r\n    },\r\n  },\r\n];\r\n"
+        "jsCode": "// Kirim transkrip bersih: sebagai pesan biasa kalau pendek, sebagai file .txt\r\n// kalau panjang (batas pesan Telegram 4096 karakter).\r\nconst config = $('Config').first().json;\r\nconst data = $('Parse Correction').first().json;\r\n\r\nconst transcript = String(data.transcript_corrected ?? data.transcript_raw ?? '').trim();\r\nconst limit = Number(config.max_transcript_inline ?? 3000);\r\nconst chatId = data.chat_id ?? $('Extract Input').first().json.chat_id;\r\nconst threadId = data.thread_id ?? $('Extract Input').first().json.thread_id;\r\n\r\nfunction escapeHtml(value) {\r\n  return String(value ?? '')\r\n    .replace(/&/g, '&amp;')\r\n    .replace(/</g, '&lt;')\r\n    .replace(/>/g, '&gt;');\r\n}\r\n\r\nfunction stamp(iso) {\r\n  const date = new Date(iso ?? Date.now());\r\n  const valid = Number.isNaN(date.getTime()) ? new Date() : date;\r\n  return valid.toISOString().slice(0, 16).replace('T', '-').replace(':', '');\r\n}\r\n\r\nif (transcript.length <= limit) {\r\n  return [\r\n    {\r\n      json: {\r\n        chat_id: chatId,\r\n        thread_id: threadId,\r\n        is_file: false,\r\n        transcript_text: `📝 <b>Transkrip</b>\\n\\n${escapeHtml(transcript)}`,\r\n      },\r\n    },\r\n  ];\r\n}\r\n\r\nconst header = [\r\n  data.title ? `Judul: ${data.title}` : null,\r\n  `Tanggal: ${data.sent_at ?? ''}`,\r\n  '',\r\n  '',\r\n].filter((line) => line !== null);\r\n\r\nconst content = `${header.join('\\n')}${transcript}\\n`;\r\nconst fileName = `transkrip-${stamp(data.sent_at)}.txt`;\r\n\r\nreturn [\r\n  {\r\n    json: {\r\n      chat_id: chatId,\r\n      thread_id: threadId,\r\n      is_file: true,\r\n      file_name: fileName,\r\n      transcript_text: '',\r\n    },\r\n    binary: {\r\n      data: {\r\n        data: Buffer.from(content, 'utf8').toString('base64'),\r\n        mimeType: 'text/plain',\r\n        fileName,\r\n        fileExtension: 'txt',\r\n      },\r\n    },\r\n  },\r\n];\r\n"
       }
     },
     {
@@ -1162,13 +1381,13 @@
             {
               "id": "707d8b0c-0d1a-6581-d21a-5d78974219c6",
               "name": "error_stage",
-              "value": "Bukan pesan suara",
+              "value": "Belum bisa diproses",
               "type": "string"
             },
             {
               "id": "cf1d02d8-94a7-ebd6-da3e-cdf4dffe36e5",
               "name": "error_message",
-              "value": "Kirim voice note atau file audio ya — pesan lain tidak diproses.",
+              "value": "Kirim voice note, file audio, atau link video YouTube ya — pesan lain tidak diproses.",
               "type": "string"
             }
           ]
@@ -1199,7 +1418,7 @@
             {
               "id": "bb723e04-940c-bbc3-1018-922a73129ed1",
               "name": "error_message",
-              "value": "File-nya tidak bisa diambil dari Telegram. Coba kirim ulang.",
+              "value": "File audionya tidak bisa diambil. Coba kirim ulang.",
               "type": "string"
             }
           ]
@@ -1342,7 +1561,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// Susun pesan error yang dikirim ke Telegram.\r\n// Semua jalur error bertemu di sini; tahap & kalimat ramahnya sudah diisi oleh\r\n// node \"Stage: ...\" tepat sebelum node ini.\r\nconst item = $input.first().json ?? {};\r\n\r\nfunction escapeHtml(value) {\r\n  return String(value ?? '')\r\n    .replace(/&/g, '&amp;')\r\n    .replace(/</g, '&lt;')\r\n    .replace(/>/g, '&gt;');\r\n}\r\n\r\nconst detail = String(\r\n  item.error?.message ??\r\n    item.error?.description ??\r\n    item.error?.error ??\r\n    (typeof item.error === 'string' ? item.error : '') ??\r\n    item.message ??\r\n    '',\r\n).trim();\r\n\r\nconst lines = [\r\n  `⚠️ <b>${escapeHtml(item.error_stage ?? 'Pemrosesan gagal')}</b>`,\r\n  escapeHtml(item.error_message ?? 'Coba kirim ulang rekamannya ya.'),\r\n];\r\n\r\nif (detail) {\r\n  lines.push('', `<code>${escapeHtml(detail.slice(0, 300))}</code>`);\r\n}\r\n\r\nlet chatId = item.chat_id ?? '';\r\nlet threadId = item.thread_id;\r\nif (!chatId) {\r\n  try {\r\n    chatId = $('Extract Audio').first().json.chat_id;\r\n    threadId = $('Extract Audio').first().json.thread_id;\r\n  } catch (error) {\r\n    chatId = '';\r\n  }\r\n}\r\n\r\nreturn [\r\n  {\r\n    json: {\r\n      chat_id: chatId,\r\n      thread_id: threadId,\r\n      error_text: lines.join('\\n'),\r\n    },\r\n  },\r\n];\r\n"
+        "jsCode": "// Susun pesan error yang dikirim ke Telegram.\r\n// Semua jalur error bertemu di sini; tahap & kalimat ramahnya sudah diisi oleh\r\n// node \"Stage: ...\" tepat sebelum node ini.\r\nconst item = $input.first().json ?? {};\r\n\r\nfunction escapeHtml(value) {\r\n  return String(value ?? '')\r\n    .replace(/&/g, '&amp;')\r\n    .replace(/</g, '&lt;')\r\n    .replace(/>/g, '&gt;');\r\n}\r\n\r\nconst detail = String(\r\n  item.error?.message ??\r\n    item.error?.description ??\r\n    item.error?.error ??\r\n    (typeof item.error === 'string' ? item.error : '') ??\r\n    item.message ??\r\n    '',\r\n).trim();\r\n\r\nconst lines = [\r\n  `⚠️ <b>${escapeHtml(item.error_stage ?? 'Pemrosesan gagal')}</b>`,\r\n  escapeHtml(item.error_message ?? 'Coba kirim ulang rekamannya ya.'),\r\n];\r\n\r\nif (detail) {\r\n  lines.push('', `<code>${escapeHtml(detail.slice(0, 300))}</code>`);\r\n}\r\n\r\nlet chatId = item.chat_id ?? '';\r\nlet threadId = item.thread_id;\r\nif (!chatId) {\r\n  try {\r\n    chatId = $('Extract Input').first().json.chat_id;\r\n    threadId = $('Extract Input').first().json.thread_id;\r\n  } catch (error) {\r\n    chatId = '';\r\n  }\r\n}\r\n\r\nreturn [\r\n  {\r\n    json: {\r\n      chat_id: chatId,\r\n      thread_id: threadId,\r\n      error_text: lines.join('\\n'),\r\n    },\r\n  },\r\n];\r\n"
       }
     },
     {
@@ -1373,8 +1592,8 @@
       }
     },
     {
-      "id": "48c648ee-d7a9-8f15-584a-fa8260b41959",
-      "name": "Sticky 47",
+      "id": "933ba984-88c3-1aba-57e5-dc13f30b3ae6",
+      "name": "Sticky 54",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
@@ -1385,12 +1604,28 @@
         "width": 620,
         "height": 200,
         "color": 4,
-        "content": "## 1. Masuk & filter\nTrigger Telegram → node **Config** (semua setelan ada di sini) → whitelist `chat_id`.\n\nGanti provider LLM = ubah `llm_base_url`, `llm_model`, `llm_json_mode` di node Config, plus credential **LLM Provider**."
+        "content": "## 1. Masuk & filter\nTrigger Telegram → node **Config** (semua setelan ada di sini) → whitelist `chat_id` → **Router: Jenis Input** memilah audio / link YouTube / bukan keduanya.\n\nGanti provider LLM = ubah `llm_base_url`, `llm_model`, `llm_json_mode` di node Config, plus credential **LLM Provider**."
       }
     },
     {
-      "id": "50a28420-7f74-9475-cc6d-560b2b301240",
-      "name": "Sticky 48",
+      "id": "4b3b6a94-79cf-f8bb-9842-722feda4bfa7",
+      "name": "Sticky 55",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        400,
+        560
+      ],
+      "parameters": {
+        "width": 1560,
+        "height": 180,
+        "color": 7,
+        "content": "## 1b. Cabang YouTube\nLink dikirim ke **yt-service** di PC Rizky (`yt_service_base_url`, lewat Tailscale) — bukan di VPS, karena YouTube memblokir IP datacenter. Balasannya audio Opus 16 kHz mono yang masuk ke **Prepare Audio** yang sama dengan voice note, jadi seluruh alur di bawah tidak berubah.\n\nFitur ini hanya hidup selama PC menyala. Kalau PC mati, pesan errornya menyebut itu secara spesifik."
+      }
+    },
+    {
+      "id": "0331deb5-7802-68c1-fcfa-3b514136018c",
+      "name": "Sticky 56",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
@@ -1405,8 +1640,8 @@
       }
     },
     {
-      "id": "f593582c-6826-c746-3b0a-5c869e568401",
-      "name": "Sticky 49",
+      "id": "30a75013-8f7e-8f71-84e1-425103be5ccb",
+      "name": "Sticky 57",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
@@ -1421,8 +1656,8 @@
       }
     },
     {
-      "id": "0df2f3ef-000b-efd8-cbf3-73aac12b9a51",
-      "name": "Sticky 50",
+      "id": "2b5672d3-51b2-5a2a-d4c8-ef1333d251d3",
+      "name": "Sticky 58",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
@@ -1437,8 +1672,8 @@
       }
     },
     {
-      "id": "616c7587-eafd-0b4d-443f-d592fed09dcb",
-      "name": "Sticky 51",
+      "id": "4bb9cb56-86a9-19c9-d6de-55e34be1af5d",
+      "name": "Sticky 59",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
@@ -1480,7 +1715,7 @@
       "main": [
         [
           {
-            "node": "Extract Audio",
+            "node": "Extract Input",
             "type": "main",
             "index": 0
           }
@@ -1494,18 +1729,18 @@
         ]
       ]
     },
-    "Extract Audio": {
+    "Extract Input": {
       "main": [
         [
           {
-            "node": "Guard: Ada Audio",
+            "node": "Router: Jenis Input",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Guard: Ada Audio": {
+    "Router: Jenis Input": {
       "main": [
         [
           {
@@ -1516,7 +1751,105 @@
         ],
         [
           {
+            "node": "Build YouTube Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
             "node": "Stage: Bukan Audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build YouTube Request": {
+      "main": [
+        [
+          {
+            "node": "YouTube: Prepare",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "YouTube: Prepare": {
+      "main": [
+        [
+          {
+            "node": "Parse YouTube Prepare",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse YouTube Prepare": {
+      "main": [
+        [
+          {
+            "node": "Guard: YouTube Siap",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guard: YouTube Siap": {
+      "main": [
+        [
+          {
+            "node": "Build YouTube Ack",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Error Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build YouTube Ack": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Kirim Info Video",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram: Kirim Info Video": {
+      "main": [
+        [
+          {
+            "node": "YouTube: Download Audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "YouTube: Download Audio": {
+      "main": [
+        [
+          {
+            "node": "Prepare Audio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stage: Unduh Gagal",
             "type": "main",
             "index": 0
           }
