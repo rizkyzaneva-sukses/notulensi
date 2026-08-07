@@ -94,7 +94,6 @@ test('setiap tahap kritis punya error output yang tersambung', () => {
     'Prepare Audio',
     'Transcribe (Groq)',
     'Transcribe (OpenAI Fallback)',
-    'LLM: Correct Terms',
     'LLM: Generate Outline',
     'LLM: Generate Outline (Retry)',
     'Render Mindmap',
@@ -106,9 +105,25 @@ test('setiap tahap kritis punya error output yang tersambung', () => {
   }
 });
 
+test('koreksi tidak memakai error output supaya satu potongan gagal tidak bercabang', () => {
+  // Transkrip panjang masuk sebagai banyak item. Dengan error output, satu
+  // potongan gagal menyalakan jalur error dan jalur sukses sekaligus — Rizky
+  // menerima pesan error dan ringkasan sekaligus.
+  const node = nodeByName('LLM: Correct Terms');
+  assert.equal(node.onError, 'continueRegularOutput');
+  assert.equal(workflow.connections['LLM: Correct Terms'].main.length, 1);
+  assert.equal(workflow.nodes.some((n) => n.name === 'Stage: Koreksi'), false);
+});
+
+test('node koreksi diberi jeda antar-item supaya tidak kena rate limit', () => {
+  const batching = nodeByName('LLM: Correct Terms').parameters.options.batching;
+  assert.ok(batching?.batch?.batchInterval > 0, 'batchInterval belum diatur');
+  assert.equal(batching.batch.batchSize, 1);
+});
+
 test('semua jalur Stage bermuara ke satu pesan error Telegram', () => {
   const stages = workflow.nodes.filter((n) => n.name.startsWith('Stage: '));
-  assert.ok(stages.length >= 7);
+  assert.ok(stages.length >= 6);
   for (const stage of stages) {
     assert.deepEqual(
       workflow.connections[stage.name].main[0].map((t) => t.node),
@@ -266,24 +281,108 @@ const mergedOut = runCodeNode('Merge Transcript', {
 })[0].json;
 
 test('body valid JSON walau transkrip berisi kutip & backslash', () => {
-  const [out] = runCodeNode('Build Correction Request', {
+  const out = runCodeNode('Build Correction Request', {
     input: [mergedOut],
     nodes: { Config: [CONFIG] },
   });
-  const body = JSON.parse(out.json.body);
+  assert.equal(out.length, 1, 'transkrip pendek tidak perlu dipotong');
+  const body = JSON.parse(out[0].json.body);
   assert.equal(body.model, CONFIG.llm_model);
+  assert.equal(body.messages.length, 2, 'tanpa pemotongan tidak ada instruksi tambahan');
   assert.equal(body.messages[1].content, mergedOut.transcript_raw);
   assert.ok(body.messages[0].content.includes('Zaneva'), 'kamus istilah ikut terkirim');
-  assert.equal(out.json.llm_url, `${CONFIG.llm_base_url}/chat/completions`);
+  assert.equal(out[0].json.llm_url, `${CONFIG.llm_base_url}/chat/completions`);
+  assert.equal(out[0].json.chunk_total, 1);
+});
+
+// Transkrip ±1 jam. Tahap koreksi tidak memampatkan apa pun, jadi tanpa
+// pemotongan balasannya kena plafon output model dan terpotong diam-diam.
+const longTranscript = Array.from(
+  { length: 60 },
+  (_, i) => `Paragraf ${i}. ${'Pembahasan ROAS dan HPP bulan ini cukup panjang. '.repeat(20)}`,
+).join('\n\n');
+
+const chunkedItems = runCodeNode('Build Correction Request', {
+  input: [{ ...mergedOut, transcript_raw: longTranscript }],
+  nodes: { Config: [CONFIG] },
+});
+
+test('transkrip panjang dipecah dan tidak ada potongan yang melewati batas', () => {
+  assert.ok(chunkedItems.length > 1, `seharusnya terpecah, dapat ${chunkedItems.length}`);
+  for (const item of chunkedItems) {
+    assert.ok(
+      item.json.chunk_text.length <= CONFIG.correction_chunk_chars,
+      `potongan ${item.json.chunk_index} panjangnya ${item.json.chunk_text.length}`,
+    );
+    assert.equal(item.json.chunk_total, chunkedItems.length);
+  }
+});
+
+test('pemecahan tidak menghilangkan atau mengacak isi', () => {
+  const indexes = chunkedItems.map((item) => item.json.chunk_index);
+  assert.deepEqual(indexes, indexes.map((_, i) => i), 'index harus urut dari 0');
+
+  const normalize = (text) => text.replace(/\s+/g, ' ').trim();
+  const rejoined = chunkedItems.map((item) => item.json.chunk_text).join('\n\n');
+  assert.equal(normalize(rejoined), normalize(longTranscript));
+});
+
+test('potongan dipotong di batas paragraf, bukan di tengah kata', () => {
+  for (const item of chunkedItems.slice(0, -1)) {
+    assert.ok(/[.!?]$/.test(item.json.chunk_text), `berakhir menggantung: ...${item.json.chunk_text.slice(-40)}`);
+  }
+});
+
+test('potongan membawa instruksi urutan supaya model tidak menambah penghubung', () => {
+  const body = JSON.parse(chunkedItems[1].json.body);
+  assert.equal(body.messages.length, 3);
+  assert.ok(body.messages[1].content.includes(`potongan ke-2 dari ${chunkedItems.length}`));
+  assert.equal(body.messages[2].content, chunkedItems[1].json.chunk_text);
+});
+
+test('correction_chunk_chars = 0 mengembalikan perilaku satu request', () => {
+  const out = runCodeNode('Build Correction Request', {
+    input: [{ ...mergedOut, transcript_raw: longTranscript }],
+    nodes: { Config: [{ ...CONFIG, correction_chunk_chars: 0 }] },
+  });
+  assert.equal(out.length, 1);
+  assert.equal(JSON.parse(out[0].json.body).messages[1].content, longTranscript.trim());
+});
+
+test('kalimat raksasa tanpa tanda baca tetap dipotong, bukan dilewatkan utuh', () => {
+  const runOn = 'kata '.repeat(4000).trim();
+  const out = runCodeNode('Build Correction Request', {
+    input: [{ ...mergedOut, transcript_raw: runOn }],
+    nodes: { Config: [CONFIG] },
+  });
+  assert.ok(out.length > 1);
+  for (const item of out) {
+    assert.ok(item.json.chunk_text.length <= CONFIG.correction_chunk_chars);
+  }
 });
 
 // ------------------------------------------------------------- Parse Correction --
 
 group('Parse Correction');
 
+const chunkRequest = (text, index, total) => ({
+  ...mergedOut,
+  chunk_index: index,
+  chunk_total: total,
+  chunk_text: text,
+  body: '{}',
+});
+
 const correctionCtx = {
-  nodes: { 'Build Correction Request': [{ ...mergedOut, body: '{}' }] },
+  nodes: {
+    Config: [CONFIG],
+    'Build Correction Request': [chunkRequest(mergedOut.transcript_raw, 0, 1)],
+  },
 };
+
+// Potongan harus cukup panjang supaya pemeriksaan rasio aktif — teks pendek
+// memang wajar menyusut banyak setelah filler dibuang.
+const bigChunk = (label) => `${label}. Pembahasan ROAS dan HPP bulan ini. `.repeat(80).trim();
 
 test('mengambil isi dari choices[0].message.content', () => {
   const [out] = runCodeNode('Parse Correction', {
@@ -309,6 +408,83 @@ test('balasan kosong jatuh balik ke transkrip mentah', () => {
   });
   assert.equal(out.json.transcript_corrected, mergedOut.transcript_raw);
   assert.equal(out.json.correction_applied, false);
+});
+
+test('potongan disusun ulang sesuai chunk_index, bukan urutan kedatangan', () => {
+  const [out] = runCodeNode('Parse Correction', {
+    input: [
+      { choices: [{ message: { content: 'bagian dua' } }] },
+      { choices: [{ message: { content: 'bagian satu' } }] },
+    ],
+    nodes: {
+      Config: [CONFIG],
+      'Build Correction Request': [chunkRequest('b', 1, 2), chunkRequest('a', 0, 2)],
+    },
+  });
+  assert.equal(out.json.transcript_corrected, 'bagian satu\n\nbagian dua');
+  assert.equal(out.json.correction_chunk_total, 2);
+  assert.equal(out.json.correction_chunk_failed, 0);
+});
+
+test('potongan yang balasannya terpotong dipakai versi mentahnya', () => {
+  // Inilah kegagalan yang dulu lolos diam-diam: model kena plafon output dan
+  // memulangkan separuh, tapi hasilnya tetap dianggap sah.
+  const utuh = bigChunk('Satu');
+  const [out] = runCodeNode('Parse Correction', {
+    input: [
+      { choices: [{ message: { content: 'Cuma satu kalimat.' } }] },
+      { choices: [{ message: { content: 'Potongan dua sudah rapi.' } }] },
+    ],
+    nodes: {
+      Config: [CONFIG],
+      'Build Correction Request': [chunkRequest(utuh, 0, 2), chunkRequest('pendek', 1, 2)],
+    },
+  });
+  assert.equal(out.json.transcript_corrected, `${utuh}\n\nPotongan dua sudah rapi.`);
+  assert.equal(out.json.correction_chunk_failed, 1);
+  assert.equal(out.json.correction_applied, true, 'potongan lain tetap terkoreksi');
+});
+
+test('penyusutan wajar pada potongan panjang tidak dianggap terpotong', () => {
+  const utuh = bigChunk('Dua');
+  const wajar = utuh.slice(0, Math.round(utuh.length * 0.85));
+  const [out] = runCodeNode('Parse Correction', {
+    input: [{ choices: [{ message: { content: wajar } }] }],
+    nodes: { Config: [CONFIG], 'Build Correction Request': [chunkRequest(utuh, 0, 1)] },
+  });
+  assert.equal(out.json.transcript_corrected, wajar);
+  assert.equal(out.json.correction_chunk_failed, 0);
+});
+
+test('item yang error ikut lewat sini dan jatuh balik ke potongannya', () => {
+  // Node koreksi memakai continueRegularOutput, jadi kegagalan tidak bercabang
+  // ke jalur error melainkan sampai ke sini sebagai item biasa.
+  const [out] = runCodeNode('Parse Correction', {
+    input: [
+      { error: { message: 'Request failed with status code 429' } },
+      { choices: [{ message: { content: 'Potongan dua rapi.' } }] },
+    ],
+    nodes: {
+      Config: [CONFIG],
+      'Build Correction Request': [chunkRequest('mentah satu', 0, 2), chunkRequest('b', 1, 2)],
+    },
+  });
+  assert.equal(out.json.transcript_corrected, 'mentah satu\n\nPotongan dua rapi.');
+  assert.equal(out.json.correction_chunk_failed, 1);
+});
+
+test('semua potongan gagal = transkrip mentah utuh, alur tetap jalan', () => {
+  const [out] = runCodeNode('Parse Correction', {
+    input: [{ error: { message: 'timeout' } }, { error: { message: 'timeout' } }],
+    nodes: {
+      Config: [CONFIG],
+      'Build Correction Request': [chunkRequest('satu', 0, 2), chunkRequest('dua', 1, 2)],
+    },
+  });
+  assert.equal(out.json.transcript_corrected, 'satu\n\ndua');
+  assert.equal(out.json.correction_applied, false);
+  assert.equal(out.json.correction_chunk_failed, 2);
+  assert.equal(out.json.chat_id, '123456789');
 });
 
 // ---------------------------------------------------- Build Outline Request --

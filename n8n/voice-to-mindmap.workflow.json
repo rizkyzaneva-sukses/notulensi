@@ -105,6 +105,18 @@
               "type": "number"
             },
             {
+              "id": "d4d82a29-a791-2097-dce0-e11623d0f6a8",
+              "name": "correction_chunk_chars",
+              "value": 9000,
+              "type": "number"
+            },
+            {
+              "id": "baeafdfb-93af-1eb9-5168-a38104c8a570",
+              "name": "correction_min_ratio",
+              "value": 0.6,
+              "type": "number"
+            },
+            {
               "id": "cb37decf-2631-8ebe-9dac-3fef8aa53574",
               "name": "bot_api_files_base_url",
               "value": "https://tele-files.contoh.com",
@@ -618,7 +630,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// Susun body request LLM untuk koreksi istilah.\r\n// Transkrip adalah input bebas, jadi body-nya dirakit sebagai objek lalu\r\n// di-JSON.stringify() di sini dan dikirim sebagai Raw body oleh HTTP Request node.\r\nconst SYSTEM_PROMPT = \"Kamu adalah editor transkrip Bahasa Indonesia untuk rekaman rapat/brainstorm bisnis.\\r\\n\\r\\nTugasmu HANYA memperbaiki hasil speech-to-text, bukan menulis ulang.\\r\\n\\r\\nATURAN WAJIB:\\r\\n1. Perbaiki typo, salah dengar, dan ejaan istilah/brand memakai kamus di bawah.\\r\\n2. Perbaiki tanda baca, kapitalisasi, dan pemenggalan kalimat agar mudah dibaca.\\r\\n3. Hapus filler yang tidak bermakna (eh, emm, anu, gitu ya) bila mengganggu, tapi JANGAN memadatkan isi.\\r\\n4. JANGAN mengubah makna, JANGAN menambah informasi baru, JANGAN menyimpulkan, JANGAN menerjemahkan.\\r\\n5. Kalau sebuah kata benar-benar tidak jelas, biarkan apa adanya — jangan menebak fakta.\\r\\n6. Pertahankan angka, nominal, tanggal, dan nama orang persis seperti aslinya.\\r\\n7. Pisahkan menjadi paragraf saat topik berganti.\\r\\n\\r\\nKAMUS EJAAN (ini ejaan yang benar — pakai persis seperti ini):\\r\\nBrand & nama produk: Zaneva, Elyasr, Be.Syari, Oberbe, Muslimah Swimwear, Yaumiah\\nIstilah bisnis: ROAS, ROI, HPP, omzet, margin, gross profit, net profit, cashflow, CPA, CPM, CTR, AOV, SKU, COD, closing, reseller, affiliate, endorse, marketplace, funnel, landing page, retargeting, budget harian, content plan, stock opname, pre-order, restock, supplier, invoice, purchase order, cash on delivery\\r\\n\\r\\nFORMAT OUTPUT:\\r\\nBalas HANYA dengan teks transkrip yang sudah diperbaiki. Tanpa pembuka, tanpa penutup, tanpa penjelasan, tanpa tanda kutip pembungkus, tanpa blok kode.\";\r\n\r\nconst config = $('Config').first().json;\r\nconst source = $input.first().json;\r\nconst transcript = String(source.transcript_raw ?? '').trim();\r\n\r\nconst body = {\r\n  model: config.llm_model,\r\n  temperature: Number(config.llm_temperature_correct ?? 0.1),\r\n  messages: [\r\n    { role: 'system', content: SYSTEM_PROMPT },\r\n    { role: 'user', content: transcript },\r\n  ],\r\n};\r\n\r\nreturn [\r\n  {\r\n    json: {\r\n      ...source,\r\n      llm_url: `${String(config.llm_base_url).replace(/\\/+$/, '')}/chat/completions`,\r\n      body: JSON.stringify(body),\r\n    },\r\n  },\r\n];\r\n"
+        "jsCode": "// Susun body request LLM untuk koreksi istilah.\n//\n// Berbeda dengan tahap ringkasan yang memampatkan, tahap ini harus mengeluarkan\n// SELURUH transkrip lagi sebagai output. Transkrip satu jam (±15 ribu token)\n// akan menabrak plafon output model dan terpotong diam-diam. Jadi transkrip\n// panjang dipecah dulu, dan tiap potongan dikoreksi terpisah.\n//\n// Node ini mengembalikan satu item per potongan; HTTP Request node di n8n\n// otomatis berjalan sekali untuk tiap item, jadi tidak perlu loop manual.\n//\n// Transkrip adalah input bebas, jadi body-nya dirakit sebagai objek lalu\n// di-JSON.stringify() di sini dan dikirim sebagai Raw body oleh HTTP Request node.\nconst SYSTEM_PROMPT = \"Kamu adalah editor transkrip Bahasa Indonesia untuk rekaman rapat/brainstorm bisnis.\\r\\n\\r\\nTugasmu HANYA memperbaiki hasil speech-to-text, bukan menulis ulang.\\r\\n\\r\\nATURAN WAJIB:\\r\\n1. Perbaiki typo, salah dengar, dan ejaan istilah/brand memakai kamus di bawah.\\r\\n2. Perbaiki tanda baca, kapitalisasi, dan pemenggalan kalimat agar mudah dibaca.\\r\\n3. Hapus filler yang tidak bermakna (eh, emm, anu, gitu ya) bila mengganggu, tapi JANGAN memadatkan isi.\\r\\n4. JANGAN mengubah makna, JANGAN menambah informasi baru, JANGAN menyimpulkan, JANGAN menerjemahkan.\\r\\n5. Kalau sebuah kata benar-benar tidak jelas, biarkan apa adanya — jangan menebak fakta.\\r\\n6. Pertahankan angka, nominal, tanggal, dan nama orang persis seperti aslinya.\\r\\n7. Pisahkan menjadi paragraf saat topik berganti.\\r\\n\\r\\nKAMUS EJAAN (ini ejaan yang benar — pakai persis seperti ini):\\r\\nBrand & nama produk: Zaneva, Elyasr, Be.Syari, Oberbe, Muslimah Swimwear, Yaumiah\\nIstilah bisnis: ROAS, ROI, HPP, omzet, margin, gross profit, net profit, cashflow, CPA, CPM, CTR, AOV, SKU, COD, closing, reseller, affiliate, endorse, marketplace, funnel, landing page, retargeting, budget harian, content plan, stock opname, pre-order, restock, supplier, invoice, purchase order, cash on delivery\\r\\n\\r\\nFORMAT OUTPUT:\\r\\nBalas HANYA dengan teks transkrip yang sudah diperbaiki. Tanpa pembuka, tanpa penutup, tanpa penjelasan, tanpa tanda kutip pembungkus, tanpa blok kode.\";\n\nconst config = $('Config').first().json;\nconst source = $input.first().json;\nconst transcript = String(source.transcript_raw ?? '').trim();\n\n// Batas karakter per potongan. 0 / kosong = jangan potong sama sekali.\nconst chunkChars = Math.max(0, Number(config.correction_chunk_chars ?? 9000) || 0);\n\n/**\n * Potong teks di batas paling alami yang masih muat: paragraf dulu, lalu\n * kalimat, dan hanya kalau terpaksa dipotong di tengah. Tujuannya supaya tiap\n * potongan tetap bisa dibaca model sebagai satuan yang utuh.\n */\nfunction splitTranscript(text, limit) {\n  if (!limit || text.length <= limit) return text ? [text] : [];\n\n  const chunks = [];\n  let current = '';\n\n  const flush = () => {\n    const trimmed = current.trim();\n    if (trimmed) chunks.push(trimmed);\n    current = '';\n  };\n\n  // Coba sambung ke potongan berjalan; gagal kalau jadi melewati batas.\n  const append = (piece, separator) => {\n    const candidate = current ? current + separator + piece : piece;\n    if (candidate.length > limit) return false;\n    current = candidate;\n    return true;\n  };\n\n  for (const paragraph of text.split(/\\n{2,}/)) {\n    const block = paragraph.trim();\n    if (!block) continue;\n    if (append(block, '\\n\\n')) continue;\n\n    flush();\n    if (block.length <= limit) {\n      current = block;\n      continue;\n    }\n\n    // Satu paragraf saja sudah kebesaran → turun ke batas kalimat.\n    for (const sentence of block.match(/[^.!?\\n]+[.!?]*\\s*/g) ?? [block]) {\n      const piece = sentence.trim();\n      if (!piece) continue;\n      if (append(piece, ' ')) continue;\n\n      flush();\n      if (piece.length <= limit) {\n        current = piece;\n        continue;\n      }\n\n      // Kalimat sangat panjang tanpa tanda baca (jarang, tapi Whisper bisa\n      // menghasilkannya) → potong paksa daripada melewati batas.\n      for (let i = 0; i < piece.length; i += limit) chunks.push(piece.slice(i, i + limit));\n    }\n  }\n  flush();\n\n  return chunks.length ? chunks : [text];\n}\n\nconst split = splitTranscript(transcript, chunkChars);\n// Selalu kembalikan minimal satu item supaya metadata tidak hilang dari alur.\nconst chunks = split.length ? split : [transcript];\nconst total = chunks.length;\nconst llmUrl = `${String(config.llm_base_url).replace(/\\/+$/, '')}/chat/completions`;\n\nreturn chunks.map((chunk, index) => {\n  const messages = [{ role: 'system', content: SYSTEM_PROMPT }];\n\n  if (total > 1) {\n    // Tanpa instruksi ini model cenderung menambahkan \"Berikut lanjutannya:\"\n    // atau catatan bahwa teksnya terpotong — dan itu ikut tergabung ke hasil.\n    messages.push({\n      role: 'system',\n      content:\n        `Ini potongan ke-${index + 1} dari ${total} sebuah transkrip panjang. ` +\n        'Perbaiki potongan ini saja dan balas hanya isinya. Jangan menambah kalimat ' +\n        'penghubung, pembuka, penutup, atau catatan bahwa teks ini terpotong. ' +\n        'Wajar kalau potongan ini dimulai atau berakhir di tengah pembicaraan.',\n    });\n  }\n\n  messages.push({ role: 'user', content: chunk });\n\n  const body = {\n    model: config.llm_model,\n    temperature: Number(config.llm_temperature_correct ?? 0.1),\n    messages,\n  };\n\n  return {\n    json: {\n      ...source,\n      chunk_index: index,\n      chunk_total: total,\n      // Disimpan supaya Parse Correction bisa jatuh balik per potongan.\n      chunk_text: chunk,\n      llm_url: llmUrl,\n      body: JSON.stringify(body),\n    },\n  };\n});\n"
       }
     },
     {
@@ -640,7 +652,13 @@
         "rawContentType": "application/json",
         "body": "={{ $json.body }}",
         "options": {
-          "timeout": 180000
+          "timeout": 180000,
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 250
+            }
+          }
         }
       },
       "credentials": {
@@ -652,7 +670,7 @@
       "retryOnFail": true,
       "maxTries": 2,
       "waitBetweenTries": 2000,
-      "onError": "continueErrorOutput"
+      "onError": "continueRegularOutput"
     },
     {
       "id": "4b038a52-bdd3-f9d6-4b7e-35a0210186f3",
@@ -665,7 +683,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// Ambil teks balasan LLM dari bentuk respons OpenAI-compatible.\r\nconst response = $input.first().json;\r\nconst previous = $('Build Correction Request').first().json;\r\n\r\nconst choice = response?.choices?.[0];\r\nconst raw = choice?.message?.content ?? choice?.text ?? '';\r\n\r\nconst corrected = (Array.isArray(raw) ? raw.map((part) => part?.text ?? '').join('') : String(raw))\r\n  // Sebagian model membungkus jawaban dalam blok kode meski sudah dilarang.\r\n  .replace(/^\\s*```[a-z]*\\s*\\n?/i, '')\r\n  .replace(/\\n?```\\s*$/i, '')\r\n  .trim();\r\n\r\nconst fallbackUsed = corrected.length === 0;\r\n\r\nreturn [\r\n  {\r\n    json: {\r\n      chat_id: previous.chat_id,\r\n      thread_id: previous.thread_id,\r\n      message_id: previous.message_id,\r\n      sent_at: previous.sent_at,\r\n      caption: previous.caption,\r\n      duration_sec: previous.duration_sec,\r\n      part_count: previous.part_count,\r\n      transcript_raw: previous.transcript_raw,\r\n      // Kalau LLM balas kosong, lebih baik pakai transkrip mentah daripada gagal.\r\n      transcript_corrected: fallbackUsed ? previous.transcript_raw : corrected,\r\n      correction_applied: !fallbackUsed,\r\n    },\r\n  },\r\n];\r\n"
+        "jsCode": "// Ambil teks balasan LLM dari bentuk respons OpenAI-compatible, lalu susun\n// kembali potongan-potongan transkrip jadi satu teks utuh.\n//\n// Node ini menerima satu item per potongan (lihat Build Correction Request) dan\n// memasang dua pengaman:\n//\n// 1. Potongan yang gagal — atau yang balasannya jauh lebih pendek dari aslinya,\n//    tanda balasannya kena plafon output model — dianggap tidak terpakai, dan\n//    yang dipakai adalah teks mentah potongan itu. Lebih baik satu bagian tidak\n//    terkoreksi daripada isinya hilang separuh tanpa ketahuan.\n// 2. Node \"LLM: Correct Terms\" memakai continueRegularOutput, jadi item yang\n//    error ikut masuk ke sini alih-alih menyalakan jalur error terpisah. Kalau\n//    lewat jalur error, satu potongan gagal akan membuat jalur error dan jalur\n//    sukses menyala bersamaan — dan Rizky menerima pesan error plus ringkasan.\nconst config = $('Config').first().json;\nconst requests = $('Build Correction Request');\nconst previous = requests.first().json;\n\nconst minRatio = Number(config.correction_min_ratio ?? 0.6);\n// Koreksi memang memangkas filler (\"eh\", \"anu\", \"gitu ya\"), jadi teks pendek\n// wajar menyusut banyak. Pemeriksaan rasio baru berarti untuk potongan yang\n// cukup panjang — yaitu satu-satunya yang bisa kena plafon output.\nconst GUARD_MIN_CHARS = 2000;\n\nfunction textOf(response) {\n  const choice = response?.choices?.[0];\n  const raw = choice?.message?.content ?? choice?.text ?? '';\n\n  return (Array.isArray(raw) ? raw.map((part) => part?.text ?? '').join('') : String(raw))\n    // Sebagian model membungkus jawaban dalam blok kode meski sudah dilarang.\n    .replace(/^\\s*```[a-z]*\\s*\\n?/i, '')\n    .replace(/\\n?```\\s*$/i, '')\n    .trim();\n}\n\nconst items = $input.all();\nconst rows = [];\nlet failed = 0;\n\nfor (let i = 0; i < items.length; i++) {\n  const response = items[i].json ?? {};\n\n  let request = {};\n  try {\n    request = requests.itemMatching(i)?.json ?? {};\n  } catch (error) {\n    // Paired-item tidak bisa ditelusuri (mis. provider mengubah bentuk item) —\n    // pakai urutan kedatangan sebagai perkiraan terbaik.\n    request = {};\n  }\n\n  const parsedIndex = Number(request.chunk_index);\n  const index = Number.isFinite(parsedIndex) ? parsedIndex : i;\n  const original = String(request.chunk_text ?? previous.transcript_raw ?? '');\n  const corrected = response.error ? '' : textOf(response);\n\n  const truncated =\n    original.length >= GUARD_MIN_CHARS && corrected.length < original.length * minRatio;\n  const usable = corrected.length > 0 && !truncated;\n\n  if (!usable) failed += 1;\n  rows.push({ index, text: usable ? corrected : original });\n}\n\nrows.sort((a, b) => a.index - b.index);\n\nconst merged = rows\n  .map((row) => row.text)\n  .filter(Boolean)\n  .join('\\n\\n')\n  .trim();\n\nconst total = rows.length;\n\nreturn [\n  {\n    json: {\n      chat_id: previous.chat_id,\n      thread_id: previous.thread_id,\n      message_id: previous.message_id,\n      sent_at: previous.sent_at,\n      caption: previous.caption,\n      duration_sec: previous.duration_sec,\n      part_count: previous.part_count,\n      transcript_raw: previous.transcript_raw,\n      // Kalau semuanya gagal, lebih baik pakai transkrip mentah daripada gagal.\n      transcript_corrected: merged || previous.transcript_raw,\n      correction_applied: total > 0 && failed < total,\n      correction_chunk_total: total,\n      correction_chunk_failed: failed,\n    },\n  },\n];\n"
       }
     },
     {
@@ -1283,37 +1301,6 @@
       }
     },
     {
-      "id": "a9aefb48-0a04-8371-75c3-0c30e5fa615e",
-      "name": "Stage: Koreksi",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
-      "position": [
-        2680,
-        1120
-      ],
-      "parameters": {
-        "mode": "manual",
-        "includeOtherFields": true,
-        "assignments": {
-          "assignments": [
-            {
-              "id": "659f4bce-6d81-a1ad-453d-a875f27c0dbe",
-              "name": "error_stage",
-              "value": "Koreksi transkrip gagal",
-              "type": "string"
-            },
-            {
-              "id": "70ffe583-3eb8-43e2-23ea-4371de56cc03",
-              "name": "error_message",
-              "value": "LLM tidak merespons. Coba kirim ulang atau ganti provider di node Config.",
-              "type": "string"
-            }
-          ]
-        },
-        "options": {}
-      }
-    },
-    {
       "id": "d18410bd-fbfe-6954-42be-9b8ec663dff2",
       "name": "Stage: Ringkasan",
       "type": "n8n-nodes-base.set",
@@ -1386,8 +1373,8 @@
       }
     },
     {
-      "id": "50a28420-7f74-9475-cc6d-560b2b301240",
-      "name": "Sticky 48",
+      "id": "48c648ee-d7a9-8f15-584a-fa8260b41959",
+      "name": "Sticky 47",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
@@ -1402,8 +1389,8 @@
       }
     },
     {
-      "id": "f593582c-6826-c746-3b0a-5c869e568401",
-      "name": "Sticky 49",
+      "id": "50a28420-7f74-9475-cc6d-560b2b301240",
+      "name": "Sticky 48",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
@@ -1418,8 +1405,8 @@
       }
     },
     {
-      "id": "0df2f3ef-000b-efd8-cbf3-73aac12b9a51",
-      "name": "Sticky 50",
+      "id": "f593582c-6826-c746-3b0a-5c869e568401",
+      "name": "Sticky 49",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
@@ -1430,12 +1417,12 @@
         "width": 2180,
         "height": 200,
         "color": 3,
-        "content": "## 3. Koreksi & outline\nBody request LLM dirakit di Code node dengan `JSON.stringify()` lalu dikirim sebagai **Raw body** — bukan \"Specify Body: JSON\" — supaya teks transkrip tidak pernah merusak struktur JSON.\n\nOutline JSON tidak valid → retry 1x → kalau tetap gagal, kirim ringkasan teks tanpa mind map."
+        "content": "## 3. Koreksi & outline\nBody request LLM dirakit di Code node dengan `JSON.stringify()` lalu dikirim sebagai **Raw body** — bukan \"Specify Body: JSON\" — supaya teks transkrip tidak pernah merusak struktur JSON.\n\nTahap koreksi harus mengeluarkan seluruh transkrip lagi, jadi transkrip panjang dipecah per `correction_chunk_chars` dan dikoreksi bertahap. Potongan yang gagal atau balasannya terpotong dipakai versi mentahnya — tidak menghentikan alur.\n\nOutline JSON tidak valid → retry 1x → kalau tetap gagal, kirim ringkasan teks tanpa mind map."
       }
     },
     {
-      "id": "616c7587-eafd-0b4d-443f-d592fed09dcb",
-      "name": "Sticky 51",
+      "id": "0df2f3ef-000b-efd8-cbf3-73aac12b9a51",
+      "name": "Sticky 50",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
@@ -1450,8 +1437,8 @@
       }
     },
     {
-      "id": "1c02a213-b6bc-960b-e3bd-ed595623b0f2",
-      "name": "Sticky 52",
+      "id": "616c7587-eafd-0b4d-443f-d592fed09dcb",
+      "name": "Sticky 51",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
@@ -1715,13 +1702,6 @@
         [
           {
             "node": "Parse Correction",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Stage: Koreksi",
             "type": "main",
             "index": 0
           }
@@ -2013,17 +1993,6 @@
       ]
     },
     "Stage: Transkrip Kosong": {
-      "main": [
-        [
-          {
-            "node": "Build Error Message",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Stage: Koreksi": {
       "main": [
         [
           {

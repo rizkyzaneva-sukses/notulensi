@@ -185,7 +185,11 @@ const transcribeNode = (name, position, { urlField, modelField, credentials }) =
   waitBetweenTries: 2000,
 });
 
-const rawJsonPost = (name, position, { url, credentials, timeout = 180000, responseFile = false }) => ({
+const rawJsonPost = (
+  name,
+  position,
+  { url, credentials, timeout = 180000, responseFile = false, batchInterval = 0 },
+) => ({
   name,
   type: 'n8n-nodes-base.httpRequest',
   typeVersion: 4.2,
@@ -203,6 +207,9 @@ const rawJsonPost = (name, position, { url, credentials, timeout = 180000, respo
     body: '={{ $json.body }}',
     options: {
       timeout,
+      // Node yang menerima banyak item (koreksi per potongan) menembak berkali-kali
+      // beruntun — jeda kecil ini menjaga jarak dari rate limit provider.
+      ...(batchInterval ? { batching: { batch: { batchSize: 1, batchInterval } } } : {}),
       ...(responseFile
         ? { response: { response: { responseFormat: 'file', outputPropertyName: 'data' } } }
         : {}),
@@ -267,6 +274,16 @@ add({
         { id: nodeId('cfg-llm-json'), name: 'llm_json_mode', value: true, type: 'boolean' },
         { id: nodeId('cfg-llm-t1'), name: 'llm_temperature_correct', value: 0.1, type: 'number' },
         { id: nodeId('cfg-llm-t2'), name: 'llm_temperature_outline', value: 0.3, type: 'number' },
+        // --- koreksi transkrip panjang ---
+        // Tahap koreksi harus mengeluarkan seluruh transkrip lagi, jadi rekaman
+        // panjang menabrak plafon output model dan terpotong diam-diam.
+        // Transkrip dipecah per sekian karakter lalu dikoreksi bertahap.
+        // 9000 karakter ≈ 2.500 token output — aman bahkan untuk model
+        // berplafon 4k. Isi 0 kalau ingin kembali ke satu request sekaligus.
+        { id: nodeId('cfg-chunk-chars'), name: 'correction_chunk_chars', value: 9000, type: 'number' },
+        // Hasil koreksi yang jauh lebih pendek dari aslinya dianggap terpotong,
+        // dan potongan itu dipakai versi mentahnya.
+        { id: nodeId('cfg-chunk-ratio'), name: 'correction_min_ratio', value: 0.6, type: 'number' },
         // --- penyaji file bot-api self-hosted (tanpa garis miring di akhir) ---
         // Kosongkan kalau memakai api.telegram.org biasa — node Download Audio
         // hanya dipakai kalau bot-api-nya self-hosted.
@@ -457,8 +474,15 @@ add({
   ...rawJsonPost('LLM: Correct Terms', [2680, 300], {
     url: '={{ $json.llm_url }}',
     credentials: CRED.llm,
+    batchInterval: 250,
   }),
-  onError: 'continueErrorOutput',
+  // Sengaja BUKAN continueErrorOutput. Transkrip panjang masuk ke sini sebagai
+  // beberapa potongan, dan dengan error output satu potongan gagal akan
+  // menyalakan jalur error sekaligus jalur sukses — Rizky menerima pesan error
+  // dan ringkasan sekaligus. Kegagalan dibiarkan lewat sebagai item biasa dan
+  // ditangani per potongan di Parse Correction (jatuh balik ke teks mentah).
+  // Kalau LLM benar-benar mati, tahap ringkasan yang akan melaporkannya.
+  onError: 'continueRegularOutput',
 });
 
 add(codeNode('Parse Correction', [2900, 300], code('parse-correction.js')));
@@ -624,7 +648,8 @@ const stages = [
   ['Stage: Siapkan Audio', [700, 1120], 'Gagal menyiapkan audio', 'Render service tidak merespons saat memproses audio. Coba lagi sebentar.'],
   ['Stage: Transkripsi', [1360, 1120], 'Transkripsi gagal', 'Groq dan provider cadangan sama-sama gagal. Coba kirim ulang rekamannya.'],
   ['Stage: Transkrip Kosong', [2240, 1120], 'Tidak ada suara terdeteksi', 'Rekamannya hening atau cuma noise, jadi tidak ada yang bisa diringkas.'],
-  ['Stage: Koreksi', [2680, 1120], 'Koreksi transkrip gagal', 'LLM tidak merespons. Coba kirim ulang atau ganti provider di node Config.'],
+  // Tidak ada Stage untuk koreksi: kegagalan di sana ditangani per potongan dan
+  // tidak menghentikan alur — lihat catatan di node "LLM: Correct Terms".
   ['Stage: Ringkasan', [3340, 1120], 'Ringkasan gagal', 'LLM tidak merespons saat membuat ringkasan. Coba kirim ulang.'],
 ];
 
@@ -664,7 +689,7 @@ const stickies = [
     2180,
     200,
     3,
-    '## 3. Koreksi & outline\nBody request LLM dirakit di Code node dengan `JSON.stringify()` lalu dikirim sebagai **Raw body** — bukan "Specify Body: JSON" — supaya teks transkrip tidak pernah merusak struktur JSON.\n\nOutline JSON tidak valid → retry 1x → kalau tetap gagal, kirim ringkasan teks tanpa mind map.',
+    '## 3. Koreksi & outline\nBody request LLM dirakit di Code node dengan `JSON.stringify()` lalu dikirim sebagai **Raw body** — bukan "Specify Body: JSON" — supaya teks transkrip tidak pernah merusak struktur JSON.\n\nTahap koreksi harus mengeluarkan seluruh transkrip lagi, jadi transkrip panjang dipecah per `correction_chunk_chars` dan dikoreksi bertahap. Potongan yang gagal atau balasannya terpotong dipakai versi mentahnya — tidak menghentikan alur.\n\nOutline JSON tidak valid → retry 1x → kalau tetap gagal, kirim ringkasan teks tanpa mind map.',
   ],
   [
     [4660, 60],
@@ -728,7 +753,6 @@ connect('Guard: Transkrip Ada', 'Stage: Transkrip Kosong', { output: 1 });
 
 connect('Build Correction Request', 'LLM: Correct Terms');
 connect('LLM: Correct Terms', 'Parse Correction', { output: 0 });
-connect('LLM: Correct Terms', 'Stage: Koreksi', { output: 1 });
 
 connect('Parse Correction', 'Build Outline Request');
 connect('Build Outline Request', 'LLM: Generate Outline');
